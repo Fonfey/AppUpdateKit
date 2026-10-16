@@ -1,0 +1,12 @@
+﻿Notepad++ 8.9.8.1
+Gebouwd op  : 2026-10-16 12:51
+Door        : (voorbeeldpakket)
+Bronmap     : C:\AppUpdateKit\Apps\NotepadPlusPlus
+Taal        : nl
+
+Bestanden in het pakket:
+  app.ico                                                   186,712 bytes  SHA256 7F00C181277BDDFE06F51E7712C713E24E29A167B20033C43829136CDADC655D
+  app.psd1                                                    5,398 bytes  SHA256 34FAAC05BC0E97B9919CF44FC25F854BE2DBA2B7844688F38DD633F73D09701E
+  install-app.cmd                                             1,012 bytes  SHA256 FADFAF90B0403529659F850D2BB5EC4F2FDA2A9E57ECB09117BD33AE2B2DBF83
+  npp.8.9.8.1.Installer.x64.exe                           6,963,432 bytes  SHA256 26F3BCCED788FADBAC4E7E577B430EA2CE6060CF3BCAD993EF4612ECD7D743DA
+  uninstall-app.cmd                                             301 bytes  SHA256 DE575EF14BC75581969539F2F264E3325A14411750B95A199C773B690528E96E

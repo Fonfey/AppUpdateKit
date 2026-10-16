@@ -1,0 +1,7 @@
+# Lokale bestanden van de Builder
+Builder-fouten.log
+*.lnk
+IntuneWinAppUtil.exe
+# Eerdere builds (archief) en tijdelijke pakketmappen
+Output/*/_archief/
+Output/*/*/Pakket/
