@@ -1,7 +1,7 @@
 ﻿#  ===========================================================================
 #   APP DETAILS  -  fill in the values between the quotes
 #  ===========================================================================
-#   Texts you leave empty ('') come from _Kit\Standaardteksten.psd1.
+#   Texts you leave empty ('') come from _Kit\DefaultTexts.psd1.
 #   You can use these tokens in all texts:
 #     {AppName}       -> the name below
 #     {Version}       -> the version below

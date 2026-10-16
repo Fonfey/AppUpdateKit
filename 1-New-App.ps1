@@ -3,14 +3,14 @@
     Step 1: creates a new app folder from the template.
 
 .EXAMPLE
-    .\1-Nieuwe-app.ps1 -AppId 7Zip -AppName '7-Zip'
+    .\1-New-App.ps1 -AppId 7Zip -AppName '7-Zip'
 
     Creates Apps\7Zip with:
       app.psd1           -> details, logo, colour, postpone rules and texts
       install-app.cmd    -> your installation steps (installers + parameters, extra files)
       uninstall-app.cmd  -> your uninstall steps
     Then put the installer(s), the logo (app.ico) and any extra files in that folder
-    and run .\2-Bouw-pakket.ps1 -App 7Zip
+    and run .\2-Build-Package.ps1 -App 7Zip
 
     The template is in the kit language (_Kit\Settings.psd1), or use -Lang nl | en.
 #>
@@ -28,7 +28,7 @@ $KitRoot = if ($PSScriptRoot) { $PSScriptRoot }
            elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
            else { (Get-Location).Path }
 if (-not (Test-Path (Join-Path $KitRoot '_Kit'))) {
-    throw "Kan de AppUpdateKit-map niet vinden / Cannot find the AppUpdateKit folder. cd <AppUpdateKit> ; .\1-Nieuwe-app.ps1 -AppId <AppId>"
+    throw "Kan de AppUpdateKit-map niet vinden / Cannot find the AppUpdateKit folder. cd <AppUpdateKit> ; .\1-New-App.ps1 -AppId <AppId>"
 }
 if (-not $Lang) {
     $Lang = 'nl'
@@ -65,6 +65,6 @@ Write-Host "`n$(T 'Aangemaakt' 'Created'): Apps\$AppId" -ForegroundColor Green
 Write-Host (T '  1. Vul app.psd1 in (versie, processen, kleur, teksten)' '  1. Fill in app.psd1 (version, processes, colour, texts)')
 Write-Host (T '  2. Zet de installer(s) en app.ico in de map' '  2. Put the installer(s) and app.ico in the folder')
 Write-Host (T '  3. Zet je installatiestappen in install-app.cmd en uninstall-app.cmd' '  3. Put your installation steps in install-app.cmd and uninstall-app.cmd')
-Write-Host "  4. .\2-Bouw-pakket.ps1 -App $AppId"
+Write-Host "  4. .\2-Build-Package.ps1 -App $AppId"
 
 if ($env:OS -eq 'Windows_NT') { Start-Process explorer.exe $target }

@@ -1,7 +1,7 @@
 ﻿#  ===========================================================================
 #   APP-GEGEVENS  -  vul de waarden tussen de aanhalingstekens in
 #  ===========================================================================
-#   Teksten die je leeg laat ('') komen uit _Kit\Standaardteksten.psd1.
+#   Teksten die je leeg laat ('') komen uit _Kit\DefaultTexts.psd1.
 #   (Engelse versie van dit bestand: app.en.psd1 in _Template.)
 #   In alle teksten kun je gebruiken:
 #     {AppName}     -> de naam hieronder

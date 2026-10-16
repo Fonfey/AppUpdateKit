@@ -34,7 +34,7 @@ try {
     $dir = Join-Path $script:AppFolder 'Herstart'
     if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
     $iconName = Get-AppSetting 'Icon' 'app.ico'
-    foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Restart-Prompt.ps1', 'Test-AppInstalled.ps1', 'Get-IdleTime.ps1', 'Standaardteksten.psd1', 'app.psd1', $iconName) {
+    foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Restart-Prompt.ps1', 'Test-AppInstalled.ps1', 'Get-IdleTime.ps1', 'DefaultTexts.psd1', 'app.psd1', $iconName) {
         $src = Join-Path $PSScriptRoot $f
         if (Test-Path $src) { Copy-Item -Path $src -Destination $dir -Force }
     }

@@ -1,4 +1,4 @@
-﻿# AppUpdateKit - instellingen van de kit / kit settings (de Builder past dit aan / the Builder updates this)
+﻿# AppUpdateKit - kit settings (the Builder updates this file)
 @{
     Language = 'nl'   # nl | en
 }

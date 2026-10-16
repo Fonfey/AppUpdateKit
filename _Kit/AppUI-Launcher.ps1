@@ -40,7 +40,7 @@ if (-not $script:App) { $script:App = Import-PowerShellDataFile -Path (Join-Path
 
 # Standard texts for all apps (optional file next to this script); English texts are in the 'En' section
 $script:DefaultTexts = @{}
-$stdPath = Join-Path $PSScriptRoot 'Standaardteksten.psd1'
+$stdPath = Join-Path $PSScriptRoot 'DefaultTexts.psd1'
 if (Test-Path $stdPath) { try { $script:DefaultTexts = Import-PowerShellDataFile -Path $stdPath } catch { } }
 $script:DefaultTextsEn = if ($script:DefaultTexts['En'] -is [hashtable]) { $script:DefaultTexts['En'] } else { @{} }
 
@@ -191,8 +191,8 @@ function Get-AppText
 {
     <#
         Popup text in the user's language.
-          Dutch  : own text (Texts) -> Standaardteksten.psd1 -> -Default
-          English: own text (TextsEn) -> Standaardteksten.psd1 (En) -> built-in English text
+          Dutch  : own text (Texts) -> DefaultTexts.psd1 -> -Default
+          English: own text (TextsEn) -> DefaultTexts.psd1 (En) -> built-in English text
         For a new installation the 'New...' variant of the key is tried first.
         Tokens: {AppName}, {Versie}/{Version}, {Minuten}/{Minutes}, {MaxUitstel}/{MaxPostpones}
     #>

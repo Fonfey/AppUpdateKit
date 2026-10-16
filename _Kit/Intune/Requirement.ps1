@@ -64,7 +64,7 @@ function Get-SetupPhase
     }
     catch { }
 
-    # De inrichtingspagina draait in wwahost.exe, in de sessie van de gebruiker
+    # The setup page (ESP) runs in wwahost.exe, in the user's session
     foreach ($p in @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'WWAHost.exe'" -ErrorAction SilentlyContinue))
     {
         $sid = (Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid -ErrorAction SilentlyContinue).Sid

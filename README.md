@@ -47,7 +47,7 @@ Then double-click **`Start-Builder.cmd`**. After the first time you can also use
 
 **New version of an app?** Pick the new installer in tab 1. The Builder fills in the new version and offers to remove the old installer from the app folder. Change the texts if needed and click *Build package*. The previous version is kept.
 
-**Standard texts for all apps** are edited in tab 3 with *Edit standard texts for all apps...*. They are in `_Kit\Standaardteksten.psd1` (English under `En`). An app's own text always comes first.
+**Standard texts for all apps** are edited in tab 3 with *Edit standard texts for all apps...*. They are in `_Kit\DefaultTexts.psd1` (English under `En`). An app's own text always comes first.
 
 Everything the Builder does, you can also do by hand. That is described below.
 
@@ -75,7 +75,7 @@ You can put parameters after `install.cmd` in Intune, for example `install.cmd /
 
 | Parameter | What it does |
 |---|---|
-| `/noprocesscheck` | Do not check whether the app is running. Then upload **`Intune\Requirement-zonder-procescheck.ps1`** as the requirement script, otherwise the normal script still blocks the installation. The installer itself must be able to handle a running app. |
+| `/noprocesscheck` | Do not check whether the app is running. Then upload **`Intune\Requirement-NoProcessCheck.ps1`** as the requirement script, otherwise the normal script still blocks the installation. The installer itself must be able to handle a running app. |
 | `/noconsent` | No popup, install right away. The notifications bottom right remain. |
 | `/silent` | No popup and no notifications. |
 | `/<own name>` | Available in `install-app.cmd` as `APP_<NAME>`. For example `/noshortcuts` gives `APP_NOSHORTCUTS`. |
@@ -86,7 +86,7 @@ if defined APP_NOSHORTCUTS goto after_shortcuts
 ... steps for the shortcuts ...
 :after_shortcuts
 ```
-The parameters an app uses are listed in `Intune-instellingen.txt`. They are also logged in `update.log`.
+The parameters an app uses are listed in `Intune-Settings.txt`. They are also logged in `update.log`.
 
 Want to use the same package with different parameters, for example without shortcuts for a certain group? Create a second Win32 app in Intune with the same `install.intunewin` and a different install command.
 
@@ -109,7 +109,7 @@ When the option is off, the package skips setup and the app comes afterwards, wi
 
 ```powershell
 # 1. Create a new app folder from the template (English template with -Lang en)
-.\1-Nieuwe-app.ps1 -AppId 7Zip -AppName '7-Zip' -Lang en
+.\1-New-App.ps1 -AppId 7Zip -AppName '7-Zip' -Lang en
 ```
 
 2. **Complete `Apps\7Zip\`:**
@@ -121,7 +121,7 @@ When the option is off, the package skips setup and the app comes afterwards, wi
 
 ```powershell
 # 3. Build the package (also checks that everything is correct)
-.\2-Bouw-pakket.ps1 -App 7Zip -Lang en
+.\2-Build-Package.ps1 -App 7Zip -Lang en
 ```
 
 4. **Upload in Intune.** Everything is in `Output\7Zip\<version>\`:
@@ -132,8 +132,8 @@ When the option is off, the package skips setup and the app comes afterwards, wi
 | `Intune\Install.ps1`, `Intune\Uninstall.ps1` | Upload under *Program* (PowerShell script installer) |
 | `Intune\Requirement.ps1` | Upload under *Requirements* (Output: String, Equals, `Voldaan`) |
 | `Intune\Detection.ps1` | Upload under *Detection rules* |
-| `Intune-instellingen.txt` | All other Intune settings in one list |
-| `Bron\` and `Bouwinfo.txt` | The settings, texts and logo of this version, plus when and by whom it was built and the SHA-256 of every file |
+| `Intune-Settings.txt` | All other Intune settings in one list |
+| `Source\` and `BuildInfo.txt` | The settings, texts and logo of this version, plus when and by whom it was built and the SHA-256 of every file |
 
 ## What you fill in per app, and what not
 
@@ -144,20 +144,20 @@ When the option is off, the package skips setup and the app comes afterwards, wi
 | Installers, logo, own files | `install.cmd` / `uninstall.cmd` (call your `-app.cmd`) |
 | | Requirement and detection script |
 
-When you change something in `_Kit\`, for example the design, build the apps again with `2-Bouw-pakket.ps1` and they all get the change.
+When you change something in `_Kit\`, for example the design, build the apps again with `2-Build-Package.ps1` and they all get the change.
 
 ## Dutch and English
 
 The kit works in two languages.
 
-- **The Builder and the generated files.** Pick *Nederlands* or *English* at the top right of the Builder. The Builder then restarts in that language. The same language applies to the messages, the log files (`update.log`), the comments in `Install.ps1` and the other scripts, `Intune-instellingen.txt` and new apps from the template. The choice is stored in `_Kit\Settings.psd1` (`Language = 'nl'` or `'en'`). Without the Builder, pass the language with `-Lang en`, for example `.\2-Bouw-pakket.ps1 -App 7Zip -Lang en`.
+- **The Builder and the generated files.** Pick *Nederlands* or *English* at the top right of the Builder. The Builder then restarts in that language. The same language applies to the messages, the log files (`update.log`), the comments in `Install.ps1` and the other scripts, `Intune-Settings.txt` and new apps from the template. The choice is stored in `_Kit\Settings.psd1` (`Language = 'nl'` or `'en'`). Without the Builder, pass the language with `-Lang en`, for example `.\2-Build-Package.ps1 -App 7Zip -Lang en`.
 - **The popups for users** follow the Windows language of the signed-in user: English Windows gives English popups, any other language gives Dutch. If you do not want that, pick *Always Dutch* or *Always English* under *Popup language* in tab 1 (`PopupLanguage` in `app.psd1`: `Auto`, `nl` or `en`).
-- **English texts** are filled in in tab 3: pick *English* under *Texts and previews in*. They are stored in `app.psd1` under `TextsEn`. An empty field means: the English standard text. The English standard texts are in `_Kit\Standaardteksten.psd1` under `En`. The preview buttons show the popups in the selected language.
+- **English texts** are filled in in tab 3: pick *English* under *Texts and previews in*. They are stored in `app.psd1` under `TextsEn`. An empty field means: the English standard text. The English standard texts are in `_Kit\DefaultTexts.psd1` under `En`. The preview buttons show the popups in the selected language.
 
-The fixed values in the files stay Dutch in both languages: `Altijd` (always), `Werktijd` (working hours), `BuitenWerktijd` (outside working hours), `Nooit` (never), `AlsNodig` (when needed), `Installeren` (install), `Wachten` (wait), the working days `ma,di,wo,do,vr` (Mon–Fri; `mon,tue,...` also works) and the requirement output `Voldaan`. The file names also stay the same.
+The fixed values in the files stay Dutch in both languages: `Altijd` (always), `Werktijd` (working hours), `BuitenWerktijd` (outside working hours), `Nooit` (never), `AlsNodig` (when needed), `Installeren` (install), `Wachten` (wait), the working days `ma,di,wo,do,vr` (Mon–Fri; `mon,tue,...` also works) and the requirement output `Voldaan`. The script and file names are English in both languages (`2-Build-Package.ps1`, `Intune-Settings.txt`, `BuildInfo.txt`, `Source\`, ...).
 
 ## Texts
-- **Standard texts for all apps** are in `_Kit\Standaardteksten.psd1`. Edit them in the Builder or by hand.
+- **Standard texts for all apps** are in `_Kit\DefaultTexts.psd1`. Edit them in the Builder or by hand.
 - **Per app and version** you fill in your own texts under `Texts` (Dutch) and `TextsEn` (English) in `app.psd1`, or in the Builder (tab 3). An empty field (`''`) means: use the standard text.
 
 **New installation or update?** Before installing, the package checks whether the app is already in "Apps & features" (the name under *Apps & features* in tab 1). If it is not there yet, the popups are about an **installation**: "A new app is ready for you", the button "Install now" and the notification "… has been installed". If it is already there, they are about an **update**. The texts for a new installation are at the bottom of tab 3 ("New installation - ..."). With *Show previews as a new installation* you see what they look like.
@@ -171,7 +171,7 @@ These words are filled in automatically:
 The Dutch forms `{Versie}`, `{Minuten}` and `{MaxUitstel}` work too.
 
 ## Getting started
-`Apps\` and `Output\` are empty. Create your first app with **+ New app** in the Builder, or with `.\1-Nieuwe-app.ps1`. Built packages appear in `Output\`.
+`Apps\` and `Output\` are empty. Create your first app with **+ New app** in the Builder, or with `.\1-New-App.ps1`. Built packages appear in `Output\`.
 
 ## Testing on a laptop
 - Log and counter per app: `C:\ProgramData\AppUpdates\<AppId>\` (`update.log`, `PostponeState.json`).

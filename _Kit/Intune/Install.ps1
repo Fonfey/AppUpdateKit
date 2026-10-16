@@ -17,7 +17,7 @@
 # =============================================================================
 #  1. {{T:SCHAKELAARS  ($true = aan)|SWITCHES  ($true = on)}}
 # =============================================================================
-# {{T:Niet controleren of de app open staat (gebruik dan ook Requirement-zonder-procescheck.ps1)|Do not check whether the app is running (then also use Requirement-zonder-procescheck.ps1)}}
+# {{T:Niet controleren of de app open staat (gebruik dan ook Requirement-NoProcessCheck.ps1)|Do not check whether the app is running (then also use Requirement-NoProcessCheck.ps1)}}
 $NoProcessCheck = $false
 # {{T:Geen popup, direct installeren (meldingen rechtsonder blijven)|No popup, install right away (notifications remain)}}
 $NoPopup        = $false

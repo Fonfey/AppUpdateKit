@@ -8,7 +8,7 @@
     - Pick the installer: name, version, type and silent parameters are detected
     - Logo (.svg/.ico/.png/.jpg), colour, postpone rules and texts (Dutch and English)
     - Preview of every popup on your own screen
-    - Save and build the .intunewin package (through 2-Bouw-pakket.ps1)
+    - Save and build the .intunewin package (through 2-Build-Package.ps1)
     - Interface language Dutch / English (stored in _Kit\Settings.psd1)
 #>
 
@@ -32,7 +32,7 @@ function T([string]$Nl, [string]$En) { if ($script:Lang -eq 'en') { return $En }
 
 function Save-KitLanguage([string]$Language)
 {
-    $text = "# AppUpdateKit - instellingen van de kit / kit settings (de Builder past dit aan / the Builder updates this)`r`n@{`r`n    Language = '$Language'   # nl | en`r`n}`r`n"
+    $text = "# AppUpdateKit - kit settings (the Builder updates this file)`r`n@{`r`n    Language = '$Language'   # nl | en`r`n}`r`n"
     [System.IO.File]::WriteAllText($SettingsPath, $text, (New-Object System.Text.UTF8Encoding $true))
 }
 
@@ -42,7 +42,7 @@ $TextKeys = @('ConsentSubHeading', 'ConsentMessage', 'ForcedSubHeading', 'Forced
               'UninstallingHeading', 'UninstallingMessage', 'UninstalledHeading', 'UninstalledMessage', 'UninstallErrorHeading', 'UninstallErrorMessage',
               'NewConsentSubHeading', 'NewConsentMessage', 'NewForcedSubHeading', 'NewForcedMessage', 'NewForcedInfo', 'NewInstallingHeading', 'NewInstallingMessage', 'NewSuccessHeading', 'NewSuccessMessage', 'NewErrorHeading', 'NewErrorMessage', 'NewRestartMessage', 'NewRestartForcedMessage')
 
-# Ingebouwde teksten; worden overschreven door _Kit\Standaardteksten.psd1 (zie Get-StandardTexts)
+# Built-in Dutch texts; overridden by _Kit\DefaultTexts.psd1 (see Get-StandardTexts)
 $BuiltinTexts = [ordered]@{
     ConsentSubHeading = 'Er is een update beschikbaar'
     ConsentMessage    = 'Er staat een nieuwe versie van {AppName} voor je klaar. Tijdens de update (een paar minuten) kun je {AppName} even niet gebruiken.'
@@ -116,7 +116,7 @@ $BuiltinTextsEn = [ordered]@{
     NewRestartMessage       = '{AppName} has been installed. Restart your laptop to finish the installation. Save your work first.'
     NewRestartForcedMessage = '{AppName} has been installed and your laptop needs to restart to finish the installation. Save your work and close your programs.'
 }
-$StandardTextsPath = Join-Path $KitDir 'Standaardteksten.psd1'
+$StandardTextsPath = Join-Path $KitDir 'DefaultTexts.psd1'
 $TextLabels = [ordered]@{
     ConsentSubHeading = 'Venster "Update beschikbaar" - ondertitel'
     ConsentMessage    = 'Venster "Update beschikbaar" - tekst'
@@ -210,7 +210,7 @@ function Read-AppPsd1
 
 function Get-StandardTexts
 {
-    # Standard texts for all apps: _Kit\Standaardteksten.psd1 (English in the 'En' section), completed with the built-in texts
+    # Standard texts for all apps: _Kit\DefaultTexts.psd1 (English in the 'En' section), completed with the built-in texts
     param ([string]$Language = 'nl', [string]$Path = $StandardTextsPath)
     $base = if ($Language -eq 'en') { $BuiltinTextsEn } else { $BuiltinTexts }
     $r = [ordered]@{}
@@ -233,10 +233,9 @@ function ConvertTo-StandardTextsPsd1
     param ($Texts, $TextsEn)
     $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
     $lines = @(
-        '#  STANDAARDTEKSTEN / STANDARD TEXTS - voor alle apps / for all apps (AppUpdateKit Builder).'
-        '#  NL: Een app gebruikt deze tekst, tenzij er in app.psd1 een eigen tekst staat. Engels staat onder "En".'
-        '#  EN: An app uses these texts unless app.psd1 has its own text. English is under "En".'
-        '#  NL: {AppName}, {Versie}, {Minuten}, {MaxUitstel}   EN: {AppName}, {Version}, {Minutes}, {MaxPostpones}'
+        '#  STANDARD TEXTS - for all apps (edited with the AppUpdateKit Builder).'
+        '#  An app uses these texts unless app.psd1 has its own text. Dutch at the top, English under "En".'
+        '#  Dutch texts: {AppName}, {Versie}, {Minuten}, {MaxUitstel}   English texts: {AppName}, {Version}, {Minutes}, {MaxPostpones}'
         '@{'
     )
     foreach ($k in $TextKeys) { $lines += "    $($k.PadRight(23))= $(& $q $Texts[$k])" }
@@ -248,9 +247,18 @@ function ConvertTo-StandardTextsPsd1
     return ($lines -join "`r`n") + "`r`n"
 }
 
+function Get-BuildPart([string]$Folder, [string]$Name)
+{
+    # File or folder of a build; builds made before the English file names use the Dutch names
+    $old = @{ 'Source' = 'Bron'; 'BuildInfo.txt' = 'Bouwinfo.txt'; 'DefaultTexts.psd1' = 'Standaardteksten.psd1' }
+    $p = Join-Path $Folder $Name
+    if (-not (Test-Path $p) -and $old[$Name]) { $o = Join-Path $Folder $old[$Name]; if (Test-Path $o) { return $o } }
+    return $p
+}
+
 function Get-AppVersions
 {
-    # All builds of an app: Output\<AppId>\<version>\ and earlier builds in Output\<AppId>\_archief\<version>_<date>\
+    # All builds of an app: Output\<AppId>\<version>\ and earlier builds in Output\<AppId>\_archive\<version>_<date>\
     param ([string]$AppId)
     $dir = Join-Path (Join-Path $KitRoot 'Output') $AppId
     if (-not (Test-Path $dir)) { return @() }
@@ -259,9 +267,9 @@ function Get-AppVersions
         param ($folder, [string]$ver, [bool]$isArchive)
         $v = $null; try { $v = [version]$ver } catch { }
         $pkgFile = Join-Path $folder.FullName 'install.intunewin'
-        $bi = Join-Path $folder.FullName 'Bouwinfo.txt'
+        $bi = Get-BuildPart $folder.FullName 'BuildInfo.txt'
         $built = if (Test-Path $bi) { (Get-Item $bi).LastWriteTime } else { $folder.LastWriteTime }
-        $bron = Join-Path $folder.FullName 'Bron'
+        $bron = Get-BuildPart $folder.FullName 'Source'
         [pscustomobject]@{
             Version       = $ver
             Label         = if ($isArchive) { "$ver  $(T '(vervangen)' '(replaced)')" } else { $ver }
@@ -277,11 +285,11 @@ function Get-AppVersions
     }
 
     $items = @()
-    foreach ($d in (Get-ChildItem $dir -Directory | Where-Object { $_.Name -ne '_archief' })) { $items += & $make $d $d.Name $false }
-    $arch = Join-Path $dir '_archief'
-    if (Test-Path $arch)
+    foreach ($d in (Get-ChildItem $dir -Directory | Where-Object { $_.Name -notin '_archive', '_archief' })) { $items += & $make $d $d.Name $false }
+    foreach ($archName in '_archive', '_archief')     # _archief = archive of builds made before the English file names
     {
-        foreach ($d in (Get-ChildItem $arch -Directory)) { $items += & $make $d (($d.Name -split '_')[0]) $true }
+        $arch = Join-Path $dir $archName
+        if (Test-Path $arch) { foreach ($d in (Get-ChildItem $arch -Directory)) { $items += & $make $d (($d.Name -split '_')[0]) $true } }
     }
     return $items | Sort-Object @{ Expression = { $_.SortKey }; Descending = $true },
                                 @{ Expression = { $_.IsArchive }; Descending = $false },
@@ -353,7 +361,7 @@ function ConvertTo-Psd1Text
         "    PreInstall  = $(& $q $d.PreInstall)    # $(T 'cmd-regels vóór de onderdelen' 'cmd lines before the components')"
         "    PostInstall = $(& $q $d.PostInstall)    # $(T 'cmd-regels na de onderdelen' 'cmd lines after the components')"
         ''
-        (T '    # ---------- 6. Teksten voor deze app/versie (leeg = _Kit\Standaardteksten.psd1) ----------' '    # ---------- 6. Texts for this app/version (empty = _Kit\Standaardteksten.psd1) ----------')
+        (T '    # ---------- 6. Teksten voor deze app/versie (leeg = _Kit\DefaultTexts.psd1) ----------' '    # ---------- 6. Texts for this app/version (empty = _Kit\DefaultTexts.psd1) ----------')
     )
     foreach ($section in 'Texts', 'TextsEn')
     {
@@ -761,9 +769,9 @@ function Get-EffectiveText
 
 function Get-VersionDetails
 {
-    # Everything about a built version, from Output\<AppId>\<version>\Bron and Bouwinfo.txt
+    # Everything about a built version, from Output\<AppId>\<version>\Source and BuildInfo.txt
     param ([string]$Path)
-    $bron = Join-Path $Path 'Bron'
+    $bron = Get-BuildPart $Path 'Source'
     $r = @{ Data = $null; Std = $null; StdEn = $null; Icon = $null; Summary = ''; Install = ''; Texts = ''; BuildInfo = '' }
 
     $psd = Join-Path $bron 'app.psd1'
@@ -776,7 +784,7 @@ function Get-VersionDetails
     $r.Data = $d
 
     # Standard texts as they were when this version was built
-    $stdFile = Join-Path $bron 'Standaardteksten.psd1'
+    $stdFile = Get-BuildPart $bron 'DefaultTexts.psd1'
     $r.Std   = Get-StandardTexts 'nl' $stdFile
     $r.StdEn = Get-StandardTexts 'en' $stdFile
 
@@ -861,8 +869,8 @@ function Get-VersionDetails
     }
     $r.Texts = $lines -join "`r`n"
 
-    $bi = Join-Path $Path 'Bouwinfo.txt'
-    $r.BuildInfo = if (Test-Path $bi) { [System.IO.File]::ReadAllText($bi) } else { T '(geen Bouwinfo.txt)' '(no Bouwinfo.txt)' }
+    $bi = Get-BuildPart $Path 'BuildInfo.txt'
+    $r.BuildInfo = if (Test-Path $bi) { [System.IO.File]::ReadAllText($bi) } else { T '(geen BuildInfo.txt)' '(no BuildInfo.txt)' }
     return $r
 }
 
@@ -1156,7 +1164,7 @@ namespace AppKit {
 # Error during start-up (before the window exists): still show a message
 trap
 {
-    $log = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-fouten.log'
+    $log = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-errors.log'
     Add-Content -Path $log -Value "$(Get-Date)`r`n$($_ | Out-String)" -ErrorAction SilentlyContinue
     [void][System.Windows.MessageBox]::Show("$(T 'De Builder kon niet starten' 'The Builder could not start'):`n`n$($_.Exception.Message)`n`nDetails: $log", 'AppUpdateKit Builder', 'OK', 'Error')
     exit 1
@@ -1659,7 +1667,7 @@ $script:TextHintsEn = @{}
 function Set-Status([string]$Text) { $ui.TxtStatus.Text = $Text }
 function Show-Error([string]$Text) { [void][System.Windows.MessageBox]::Show($Text, 'AppUpdateKit Builder', 'OK', 'Warning') }
 
-$script:ErrorLog = Join-Path $KitRoot 'Builder-fouten.log'
+$script:ErrorLog = Join-Path $KitRoot 'Builder-errors.log'
 function Write-BuilderError($ErrorRecord)
 {
     # Show and log the error, instead of the Builder closing without a message
@@ -1668,7 +1676,7 @@ function Write-BuilderError($ErrorRecord)
         "$($ErrorRecord.Exception.Message)`r`n$($ErrorRecord.InvocationInfo.PositionMessage)`r`n$($ErrorRecord.ScriptStackTrace)"
     } else { "$ErrorRecord" }
     try { Add-Content -Path $script:ErrorLog -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n$msg`r`n" -ErrorAction Stop }
-    catch { $script:ErrorLog = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-fouten.log'; Add-Content -Path $script:ErrorLog -Value $msg -ErrorAction SilentlyContinue }
+    catch { $script:ErrorLog = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-errors.log'; Add-Content -Path $script:ErrorLog -Value $msg -ErrorAction SilentlyContinue }
     $first = ($msg -split "`r?`n")[0]
     Show-Error "$(T 'Er ging iets mis' 'Something went wrong'):`n`n$first`n`n$(T 'De details staan in' 'Details are in'):`n$($script:ErrorLog)"
     Set-Status "$(T 'Fout' 'Error'): $first"
@@ -1842,7 +1850,8 @@ function Show-VersionDetails
     if ($det.Data)
     {
         $installNow = $ui.TxtInstallCmd.Text
-        $installOld = if (Test-Path (Join-Path $v.Path 'Bron\install-app.cmd')) { [System.IO.File]::ReadAllText((Join-Path $v.Path 'Bron\install-app.cmd')) } else { '' }
+        $oldCmd = Join-Path (Get-BuildPart $v.Path 'Source') 'install-app.cmd'
+        $installOld = if (Test-Path $oldCmd) { [System.IO.File]::ReadAllText($oldCmd) } else { '' }
         $diff = @(Compare-AppData $det.Data (Read-Form) $installOld $installNow)
         $summary += "`r`n`r`n---------- $(T 'Verschil met wat nu in de Builder staat' 'Difference with what is in the Builder now') ----------`r`n"
         $summary += if ($diff.Count) { ($diff | ForEach-Object { "- $_" }) -join "`r`n" } else { T 'Geen verschillen.' 'No differences.' }
@@ -1873,7 +1882,7 @@ function Get-SelectedVersion
 
 function Show-StandardTextsEditor
 {
-    # Small window to edit _Kit\Standaardteksten.psd1 (applies to all apps), Dutch and English
+    # Small window to edit _Kit\DefaultTexts.psd1 (applies to all apps), Dutch and English
     [xml]$x = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         Title="Standaardteksten voor alle apps" Width="760" Height="680" WindowStartupLocation="CenterOwner"
@@ -2252,7 +2261,7 @@ $buildTimer.Add_Tick({
         {
             $ui.BtnOpenOutput.IsEnabled = $true
             Set-Status "$(T 'Klaar' 'Done'): Output\$($script:CurrentApp)\$($script:BuildVersion)\install.intunewin"
-            $r = [System.Windows.MessageBox]::Show((T "Het pakket is klaar:`n$($pkgFile.FullName)`n`nIn dezelfde map staan Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-instellingen.txt en Bouwinfo.txt.`n`nMap openen?" "The package is ready:`n$($pkgFile.FullName)`n`nThe same folder has Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-instellingen.txt (Intune settings) and Bouwinfo.txt (build info).`n`nOpen the folder?"), (T 'Pakket klaar' 'Package ready'), 'YesNo', 'Information')
+            $r = [System.Windows.MessageBox]::Show((T "Het pakket is klaar:`n$($pkgFile.FullName)`n`nIn dezelfde map staan Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-Settings.txt en BuildInfo.txt.`n`nMap openen?" "The package is ready:`n$($pkgFile.FullName)`n`nThe same folder has Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-Settings.txt and BuildInfo.txt.`n`nOpen the folder?"), (T 'Pakket klaar' 'Package ready'), 'YesNo', 'Information')
             if ($r -eq 'Yes') { Start-Process explorer.exe $out }
         }
         elseif ($script:BuildProc.ExitCode -eq 0)
@@ -2296,7 +2305,7 @@ function Start-Build
 
     $script:BuildProc = Start-Process -FilePath 'powershell.exe' -NoNewWindow -PassThru `
         -RedirectStandardOutput $script:BuildLog -RedirectStandardError "$($script:BuildLog).err" `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitRoot '2-Bouw-pakket.ps1')`"", '-App', $script:CurrentApp, '-Lang', $script:Lang)
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitRoot '2-Build-Package.ps1')`"", '-App', $script:CurrentApp, '-Lang', $script:Lang)
     # Keep the handle: otherwise Windows PowerShell 5.1 returns no ExitCode afterwards
     $null = $script:BuildProc.Handle
     $buildTimer.Start()
@@ -2544,11 +2553,11 @@ $ui.BtnVerRestore.Add_Click({
             "- new installer or new version number = a new version")
     if ([System.Windows.MessageBox]::Show($q, (T 'Kopie maken en aanpassen' 'Copy and edit'), 'YesNo', 'Question') -ne 'Yes') { return }
 
-    $bronDir = Join-Path $v.Path 'Bron'
+    $bronDir = Get-BuildPart $v.Path 'Source'
     $appDir  = Get-AppFolder
     Set-Status "$(T 'Kopie maken van' 'Copying') $($v.Label)..."
     Get-ChildItem $appDir -Force | Remove-Item -Recurse -Force
-    Get-ChildItem $bronDir -Force | Where-Object { $_.Name -ne 'Standaardteksten.psd1' } | Copy-Item -Destination $appDir -Recurse -Force
+    Get-ChildItem $bronDir -Force | Where-Object { $_.Name -notin 'DefaultTexts.psd1', 'Standaardteksten.psd1' } | Copy-Item -Destination $appDir -Recurse -Force
     Import-App $script:CurrentApp
     $ui.Tabs.SelectedIndex = 0
 

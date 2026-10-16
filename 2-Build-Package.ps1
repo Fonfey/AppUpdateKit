@@ -9,25 +9,25 @@
       Output\<AppId>\<version>\Intune\Uninstall.ps1     PowerShell uninstaller (upload separately)
       Output\<AppId>\<version>\Intune\Requirement.ps1   upload separately under Requirements
       Output\<AppId>\<version>\Intune\Detection.ps1     upload separately under Detection rules
-      Output\<AppId>\<version>\Intune-instellingen.txt  all Intune settings in one place
-      Output\<AppId>\<version>\Bron\                    full copy of this version (including installers)
-      Output\<AppId>\_archief\<version>_<date>\         earlier builds of the same version (when rebuilding)
-      Output\<AppId>\<version>\Bouwinfo.txt             when, by whom, which files (with SHA-256)
+      Output\<AppId>\<version>\Intune-Settings.txt       all Intune settings in one place
+      Output\<AppId>\<version>\Source\                full copy of this version (including installers)
+      Output\<AppId>\_archive\<version>_<date>\         earlier builds of the same version (when rebuilding)
+      Output\<AppId>\<version>\BuildInfo.txt         when, by whom, which files (with SHA-256)
     install.intunewin is created when IntuneWinAppUtil.exe is next to this script or in PATH.
-    When that works, the temporary Pakket\ folder is removed (use -KeepPackageFolder to keep it).
+    When that works, the temporary Package\ folder is removed (use -KeepPackageFolder to keep it).
 
     Language of messages and generated files: -Lang, otherwise _Kit\Settings.psd1 (Language = 'nl' | 'en').
 
 .EXAMPLE
-    .\2-Bouw-pakket.ps1 -App NotepadPlusPlus
-    .\2-Bouw-pakket.ps1 -App NotepadPlusPlus -Lang en
+    .\2-Build-Package.ps1 -App NotepadPlusPlus
+    .\2-Build-Package.ps1 -App NotepadPlusPlus -Lang en
 #>
 
 param
 (
     [Parameter(Mandatory)][string]$App,                       # folder name under Apps\, or a full path
     [string]$Output = '',                                     # default: Output next to this script
-    [switch]$KeepPackageFolder,                               # keep the Pakket\ folder after packing
+    [switch]$KeepPackageFolder,                               # keep the Package\ folder after packing
     [ValidateSet('', 'nl', 'en')][string]$Lang = ''           # language of messages and generated files
 )
 
@@ -37,7 +37,7 @@ $KitRoot = if ($PSScriptRoot) { $PSScriptRoot }
            elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
            else { (Get-Location).Path }
 if (-not (Test-Path (Join-Path $KitRoot '_Kit'))) {
-    throw "Kan de AppUpdateKit-map niet vinden / Cannot find the AppUpdateKit folder. cd <AppUpdateKit> ; .\2-Bouw-pakket.ps1 -App <AppId>"
+    throw "Kan de AppUpdateKit-map niet vinden / Cannot find the AppUpdateKit folder. cd <AppUpdateKit> ; .\2-Build-Package.ps1 -App <AppId>"
 }
 $kit = Join-Path $KitRoot '_Kit'
 
@@ -103,18 +103,18 @@ if ($problems) {
 
 # ---------- Folders: Output\<AppId>\<version>\ ----------
 $root   = Join-Path (Join-Path $Output $cfg.AppId) $cfg.Version
-$pkg    = Join-Path $root 'Pakket'
+$pkg    = Join-Path $root 'Package'
 $intune = Join-Path $root 'Intune'
-$bron   = Join-Path $root 'Bron'
+$bron   = Join-Path $root 'Source'
 if (Test-Path $root) {
     # Keep everything: the previous build of this version goes to the archive
-    $stampSource = if (Test-Path (Join-Path $root 'Bouwinfo.txt')) { Get-Item (Join-Path $root 'Bouwinfo.txt') } else { Get-Item $root }
-    $archiveDir = Join-Path (Join-Path $Output $cfg.AppId) '_archief'
+    $stampSource = if (Test-Path (Join-Path $root 'BuildInfo.txt')) { Get-Item (Join-Path $root 'BuildInfo.txt') } else { Get-Item $root }
+    $archiveDir = Join-Path (Join-Path $Output $cfg.AppId) '_archive'
     $archive = Join-Path $archiveDir "$($cfg.Version)_$($stampSource.LastWriteTime.ToString('yyyyMMdd-HHmmss'))"
     New-Item -Path $archiveDir -ItemType Directory -Force | Out-Null
-    if (Test-Path (Join-Path $root 'Pakket')) { Remove-Item -Path (Join-Path $root 'Pakket') -Recurse -Force }   # temporary folder, not kept
+    if (Test-Path (Join-Path $root 'Package')) { Remove-Item -Path (Join-Path $root 'Package') -Recurse -Force }   # temporary folder, not kept
     Move-Item -Path $root -Destination $archive
-    Write-Warning (T "Versie $($cfg.Version) was al gebouwd. Die build is bewaard in _archief\$(Split-Path $archive -Leaf)." "Version $($cfg.Version) was already built. That build has been kept in _archief\$(Split-Path $archive -Leaf).")
+    Write-Warning (T "Versie $($cfg.Version) was al gebouwd. Die build is bewaard in _archive\$(Split-Path $archive -Leaf)." "Version $($cfg.Version) was already built. That build has been kept in _archive\$(Split-Path $archive -Leaf).")
 }
 New-Item -Path $pkg, $intune, $bron -ItemType Directory -Force | Out-Null
 
@@ -137,7 +137,7 @@ $days     = if ($cfg.WorkDays) { $cfg.WorkDays } else { 'ma,di,wo,do,vr' }
 $noUser   = if ($cfg.NoUserAction) { $cfg.NoUserAction } else { 'Installeren' }
 $idleMin  = [int]("0$($cfg.IdleMinutes)")
 $popupLang = if ("$($cfg.PopupLanguage)" -in 'nl', 'en') { "$($cfg.PopupLanguage)" } else { 'Auto' }
-# Own parameters used by install-app.cmd (APP_XXX), for the list in Intune-instellingen.txt
+# Own parameters used by install-app.cmd (APP_XXX), for the list in Intune-Settings.txt
 $appCmdPath = Join-Path $source 'install-app.cmd'
 $appParams = @()
 if (Test-Path $appCmdPath) {
@@ -181,7 +181,7 @@ Write-Text (Join-Path $pkg 'app.psd1') $psdText
 foreach ($f in 'install-app.cmd', 'uninstall-app.cmd') { Write-Text (Join-Path $pkg $f) (Read-Text (Join-Path $source $f)) -Cmd }
 
 # 3. Shared scripts and standard texts (identical for every app)
-foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Ask-InstallConsent.ps1', 'Show-Toast.ps1', 'Test-AppRunning.ps1', 'Get-IdleTime.ps1', 'Set-RestartPrompt.ps1', 'Restart-Prompt.ps1', 'Remove-App.ps1', 'Test-AppInstalled.ps1', 'Standaardteksten.psd1') {
+foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Ask-InstallConsent.ps1', 'Show-Toast.ps1', 'Test-AppRunning.ps1', 'Get-IdleTime.ps1', 'Set-RestartPrompt.ps1', 'Restart-Prompt.ps1', 'Remove-App.ps1', 'Test-AppInstalled.ps1', 'DefaultTexts.psd1') {
     if (Test-Path (Join-Path $kit $f)) { Write-Text (Join-Path $pkg $f) (Read-Text (Join-Path $kit $f)) }
 }
 foreach ($f in 'install.cmd', 'uninstall.cmd') {
@@ -193,7 +193,7 @@ foreach ($f in 'Requirement.ps1', 'Detection.ps1') {
     Write-Text (Join-Path $intune $f) ((Fill (Read-Text (Join-Path (Join-Path $kit 'Intune') $f))).Replace('{{CHECK_PROCESSES}}', 'true'))
 }
 # Variant for /noprocesscheck: without checking whether the app is running
-Write-Text (Join-Path $intune 'Requirement-zonder-procescheck.ps1') ((Fill (Read-Text (Join-Path (Join-Path $kit 'Intune') 'Requirement.ps1'))).Replace('{{CHECK_PROCESSES}}', 'false'))
+Write-Text (Join-Path $intune 'Requirement-NoProcessCheck.ps1') ((Fill (Read-Text (Join-Path (Join-Path $kit 'Intune') 'Requirement.ps1'))).Replace('{{CHECK_PROCESSES}}', 'false'))
 
 # ---------- PowerShell installer for Intune (Install.ps1 / Uninstall.ps1, upload separately) ----------
 function ConvertTo-PsLiteral($v) {
@@ -307,14 +307,14 @@ foreach ($f in 'Install.ps1', 'Uninstall.ps1') {
 Get-ChildItem -Path $source -Force | Where-Object { $_.Extension -ne '.intunewin' } |
     Copy-Item -Destination $bron -Recurse -Force
 # Standard texts as they were at this build (for the history)
-if (Test-Path (Join-Path $kit 'Standaardteksten.psd1')) { Copy-Item (Join-Path $kit 'Standaardteksten.psd1') $bron -Force }
+if (Test-Path (Join-Path $kit 'DefaultTexts.psd1')) { Copy-Item (Join-Path $kit 'DefaultTexts.psd1') $bron -Force }
 
 # ---------- Build info ----------
 $fileLines = Get-ChildItem -Path $source -File -Force | Where-Object { $_.Extension -ne '.intunewin' } | Sort-Object Name | ForEach-Object {
     $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash
     '  {0,-50} {1,14:N0} bytes  SHA256 {2}' -f $_.Name, $_.Length, $hash
 }
-Write-Text (Join-Path $root 'Bouwinfo.txt') @"
+Write-Text (Join-Path $root 'BuildInfo.txt') @"
 $($cfg.AppName) $($cfg.Version)
 $(T 'Gebouwd op  ' 'Built on    '): $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 $(T 'Door        ' 'By          '): $env:USERNAME $(T 'op' 'on') $env:COMPUTERNAME
@@ -333,7 +333,7 @@ $($cfg.AppName) $($cfg.Version) - Intune Win32 app
 
 Package
   install.intunewin
-  (pack yourself: IntuneWinAppUtil.exe -c .\Pakket -s install.cmd -o .)
+  (pack yourself: IntuneWinAppUtil.exe -c .\Package -s install.cmd -o .)
 
 Program
   Installer type     : PowerShell script (recommended)
@@ -378,7 +378,7 @@ Languages
 
 Parameters after install.cmd (may be combined, e.g. install.cmd /noshortcuts /noprocesscheck)
   /noprocesscheck  do not check whether the app is running.
-                   Then use Intune\Requirement-zonder-procescheck.ps1 as requirement script,
+                   Then use Intune\Requirement-NoProcessCheck.ps1 as requirement script,
                    otherwise the normal requirement script still holds the installation back.
                    Note: the installer itself must be able to handle a running app.
   /noconsent       no popup, install right away (notifications remain)
@@ -420,7 +420,7 @@ $($cfg.AppName) $($cfg.Version) - Intune Win32-app
 
 Pakket
   install.intunewin
-  (zelf inpakken: IntuneWinAppUtil.exe -c .\Pakket -s install.cmd -o .)
+  (zelf inpakken: IntuneWinAppUtil.exe -c .\Package -s install.cmd -o .)
 
 Program
   Installer type     : PowerShell script (aanbevolen)
@@ -464,7 +464,7 @@ Talen
 
 Parameters achter install.cmd (combineren mag, bijv. install.cmd /noshortcuts /noprocesscheck)
   /noprocesscheck  niet controleren of de app open staat.
-                   Gebruik dan Intune\Requirement-zonder-procescheck.ps1 als requirement-script,
+                   Gebruik dan Intune\Requirement-NoProcessCheck.ps1 als requirement-script,
                    anders houdt het gewone requirement-script de installatie nog steeds tegen.
                    Let op: de installer moet zelf met een open app om kunnen gaan.
   /noconsent       geen popup, direct installeren (meldingen rechtsonder blijven)
@@ -498,7 +498,7 @@ Testen op een laptop
   Teller op max  : zet PostponeCount op $(if ($cfg.MaxPostpones) { $cfg.MaxPostpones } else { 5 }) in PostponeState.json
 "@
 }
-Write-Text (Join-Path $root 'Intune-instellingen.txt') $settingsText
+Write-Text (Join-Path $root 'Intune-Settings.txt') $settingsText
 
 # ---------- Pack (when IntuneWinAppUtil.exe is available) ----------
 $tool = @((Join-Path $KitRoot 'IntuneWinAppUtil.exe'), (Get-Command IntuneWinAppUtil.exe -ErrorAction SilentlyContinue).Source) |
@@ -520,8 +520,8 @@ else {
 
 Write-Host "`n$(T 'Klaar' 'Done'): $root" -ForegroundColor Green
 if ($packed) { Write-Host (T '  install.intunewin        -> uploaden in Intune' '  install.intunewin        -> upload in Intune') }
-else         { Write-Host (T '  Pakket\                  -> inpakken met IntuneWinAppUtil' '  Pakket\                  -> pack with IntuneWinAppUtil') }
+else         { Write-Host (T '  Package\                 -> inpakken met IntuneWinAppUtil' '  Package\                 -> pack with IntuneWinAppUtil') }
 Write-Host (T '  Intune\                  -> Install.ps1 + Uninstall.ps1 (installer type PowerShell script),' '  Intune\                  -> Install.ps1 + Uninstall.ps1 (installer type PowerShell script),')
 Write-Host (T '                              Requirement.ps1 en Detection.ps1 los uploaden' '                              upload Requirement.ps1 and Detection.ps1 separately')
-Write-Host (T '  Intune-instellingen.txt  -> alle instellingen voor Intune' '  Intune-instellingen.txt  -> all settings for Intune')
-Write-Host (T '  Bron\ + Bouwinfo.txt     -> volledige kopie en gegevens van deze versie' '  Bron\ + Bouwinfo.txt     -> full copy and details of this version')
+Write-Host (T '  Intune-Settings.txt      -> alle instellingen voor Intune' '  Intune-Settings.txt      -> all settings for Intune')
+Write-Host (T '  Source\ + BuildInfo.txt  -> volledige kopie en gegevens van deze versie' '  Source\ + BuildInfo.txt  -> full copy and details of this version')

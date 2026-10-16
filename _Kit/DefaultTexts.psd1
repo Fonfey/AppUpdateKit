@@ -1,28 +1,25 @@
 ﻿#  ===========================================================================
-#   STANDAARDTEKSTEN / STANDARD TEXTS  -  voor alle apps / for all apps
+#   STANDARD TEXTS  -  for all apps
 #  ===========================================================================
-#   NL: Deze teksten gebruikt elke app, tenzij je voor die app een eigen tekst invult
-#       (Builder, tabblad Teksten). Bovenaan Nederlands, onder "En" Engels. De gebruiker
-#       krijgt Engels als zijn Windows Engels is. Na een wijziging: pakketten opnieuw bouwen.
-#   EN: Every app uses these texts unless you enter its own text (Builder, Texts tab).
-#       Dutch at the top, English under "En". Users get English when their Windows is
-#       English. After a change: rebuild the packages.
+#   Every app uses these texts unless you enter its own text (Builder, Texts tab).
+#   Dutch at the top, English under "En". Users get English when their Windows is
+#   English. After a change: rebuild the packages.
 #
-#   NL: {AppName}, {Versie}, {Minuten}, {MaxUitstel}
-#   EN: {AppName}, {Version}, {Minutes}, {MaxPostpones}
+#   Dutch texts  : {AppName}, {Versie}, {Minuten}, {MaxUitstel}
+#   English texts: {AppName}, {Version}, {Minutes}, {MaxPostpones}  (both forms work)
 #  ===========================================================================
 @{
 
-    # Venster "Update beschikbaar" (Later / Nu bijwerken)
+    # "Update available" window (Later / Update now)
     ConsentSubHeading       = 'Er is een update beschikbaar'
     ConsentMessage          = 'Versie {Versie} van {AppName} staat voor je klaar. Tijdens de update (een paar minuten) kun je {AppName} even niet gebruiken.'
 
-    # Waarschuwing na de laatste keer uitstellen
+    # Warning after the last postpone
     ForcedSubHeading        = 'De update start over {Minuten} minuten'
     ForcedMessage           = 'Je hebt de update van {AppName} {MaxUitstel} keer uitgesteld. Over {Minuten} minuten wordt versie {Versie} automatisch geïnstalleerd. Sla je werk op en sluit {AppName} af.'
     ForcedInfo              = 'Wil je niet wachten? Sla je werk op, sluit {AppName} af en klik op Nu installeren.'
 
-    # Meldingen rechtsonder
+    # Notifications bottom right
     InstallingHeading       = 'Update wordt geïnstalleerd'
     InstallingMessage       = '{AppName} wordt bijgewerkt naar versie {Versie} en is even niet beschikbaar. Je hoeft niets te doen; we laten het weten zodra het klaar is.'
     SuccessHeading          = 'Update geïnstalleerd'
@@ -30,13 +27,13 @@
     ErrorHeading            = 'Update niet gelukt'
     ErrorMessage            = 'Er ging iets mis bij het bijwerken van {AppName}. Werkt de app niet? Neem dan contact op met de servicedesk.'
 
-    # Herstartmelding ({Minuten} = waarschuwingstijd)
+    # Restart prompt ({Minuten} = warning time)
     RestartSubHeading       = 'Herstart nodig'
     RestartMessage          = '{AppName} is bijgewerkt. Herstart je laptop om de update af te ronden. Sla eerst je werk op.'
     RestartForcedSubHeading = 'Je laptop wordt over {Minuten} minuten herstart'
     RestartForcedMessage    = '{AppName} is bijgewerkt en je laptop moet herstarten om de update af te ronden. Sla je werk op en sluit je programma''s af.'
 
-    # Meldingen bij verwijderen
+    # Notifications when removing
     UninstallingHeading     = '{AppName} wordt verwijderd'
     UninstallingMessage     = '{AppName} wordt van je laptop verwijderd en is even niet beschikbaar. Je hoeft niets te doen.'
     UninstalledHeading      = '{AppName} is verwijderd'
@@ -44,7 +41,7 @@
     UninstallErrorHeading   = 'Verwijderen niet gelukt'
     UninstallErrorMessage   = 'Er ging iets mis bij het verwijderen van {AppName}. Geeft dit problemen? Neem dan contact op met de servicedesk.'
 
-    # Nieuwe installatie (app stond nog niet op de laptop)
+    # New installation (app was not on the device yet)
     NewConsentSubHeading    = 'Er staat een nieuwe app voor je klaar'
     NewConsentMessage       = '{AppName} wordt op je laptop geïnstalleerd. Dat duurt een paar minuten.'
     NewForcedSubHeading     = 'De installatie start over {Minuten} minuten'

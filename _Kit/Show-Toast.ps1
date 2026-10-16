@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
     Shows a notification in the bottom-right corner to the logged-on user (also when running as SYSTEM).
-    Do NOT edit per app; texts come from app.psd1 / Standaardteksten.psd1, in the user's language.
+    Do NOT edit per app; texts come from app.psd1 / DefaultTexts.psd1, in the user's language.
 
 .PARAMETER Type
     Info       : general notification (pass -Heading and -Message)
