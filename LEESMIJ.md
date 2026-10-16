@@ -76,7 +76,7 @@ Achter `install.cmd` kun je in Intune parameters zetten, bijvoorbeeld `install.c
 | `/noprocesscheck` | Niet controleren of de app open staat. Upload dan **`Intune\Requirement-zonder-procescheck.ps1`** als requirement-script, anders houdt het gewone script de installatie nog tegen. De installer moet zelf met een open app om kunnen gaan. |
 | `/noconsent` | Geen popup, direct installeren. De meldingen rechtsonder blijven. |
 | `/silent` | Geen popup en geen meldingen. |
-| `/<eigen naam>` | Beschikbaar in `install-app.cmd` als `APP_<NAAM>`. Zo zit `/noshortcuts` in het Omnissa-voorbeeld. |
+| `/<eigen naam>` | Beschikbaar in `install-app.cmd` als `APP_<NAAM>`. Bijvoorbeeld `/noshortcuts` geeft `APP_NOSHORTCUTS`. |
 
 Een stap overslaan met een eigen parameter (in *Extra stappen* of in `install-app.cmd`):
 ```
@@ -167,11 +167,8 @@ Deze woorden worden automatisch ingevuld:
 
 In de Engelse teksten gebruik je `{Version}`, `{Minutes}` en `{MaxPostpones}`. Beide vormen werken in beide talen.
 
-## Voorbeelden
-- **`Apps\NotepadPlusPlus`**: compleet, inclusief installer. Het kant-en-klare pakket staat in `Output\NotepadPlusPlus\8.9.8.1\install.intunewin`.
-- **`Apps\OmnissaHorizon`**: jullie Omnissa-update in dit format, met runtime, client, snelkoppelingen en de VMware → Omnissa-teksten. De twee installers zet je er zelf bij (`Omnissa-Horizon-Client.exe` en `windowsdesktop-runtime-8.0.22-win-x64.exe`). Ze zijn te groot om mee te sturen.
-
-  Let op: het huidige Omnissa-pakket houdt zijn teller bij in `C:\ProgramData\OmnissaHorizonUpdate`, deze versie in `C:\ProgramData\AppUpdates\OmnissaHorizon`. Wissel daarom niet halverwege een uitrol, anders begint de teller voor gebruikers weer bij 5.
+## Beginnen
+`Apps\` en `Output\` zijn leeg. Maak je eerste app met **+ Nieuwe app** in de Builder, of met `.\1-Nieuwe-app.ps1`. Gebouwde pakketten komen in `Output\`.
 
 ## Testen op een laptop
 - Log en teller per app: `C:\ProgramData\AppUpdates\<AppId>\` (`update.log`, `PostponeState.json`).

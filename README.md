@@ -78,7 +78,7 @@ You can put parameters after `install.cmd` in Intune, for example `install.cmd /
 | `/noprocesscheck` | Do not check whether the app is running. Then upload **`Intune\Requirement-zonder-procescheck.ps1`** as the requirement script, otherwise the normal script still blocks the installation. The installer itself must be able to handle a running app. |
 | `/noconsent` | No popup, install right away. The notifications bottom right remain. |
 | `/silent` | No popup and no notifications. |
-| `/<own name>` | Available in `install-app.cmd` as `APP_<NAME>`. That is how `/noshortcuts` works in the Omnissa example. |
+| `/<own name>` | Available in `install-app.cmd` as `APP_<NAME>`. For example `/noshortcuts` gives `APP_NOSHORTCUTS`. |
 
 Skipping a step with your own parameter (in *Extra steps* or in `install-app.cmd`):
 ```
@@ -170,13 +170,8 @@ These words are filled in automatically:
 
 The Dutch forms `{Versie}`, `{Minuten}` and `{MaxUitstel}` work too.
 
-## Examples
-- **`Apps\NotepadPlusPlus`**: complete, including the installer. The ready-made package is in `Output\NotepadPlusPlus\8.9.8.1\install.intunewin`.
-- **`Apps\OmnissaHorizon`**: an Omnissa Horizon update in this format, with runtime, client, shortcuts and the VMware → Omnissa texts. Add the two installers yourself (`Omnissa-Horizon-Client.exe` and `windowsdesktop-runtime-8.0.22-win-x64.exe`); they are too large to include.
-
-  Note: an existing Omnissa package that keeps its counter in `C:\ProgramData\OmnissaHorizonUpdate` does not share it with this version, which uses `C:\ProgramData\AppUpdates\OmnissaHorizon`. So do not switch halfway through a rollout, or the counter starts again at 5 for users.
-
-The empty kit (`AppUpdateKit-leeg.zip`) has no example apps.
+## Getting started
+`Apps\` and `Output\` are empty. Create your first app with **+ New app** in the Builder, or with `.\1-Nieuwe-app.ps1`. Built packages appear in `Output\`.
 
 ## Testing on a laptop
 - Log and counter per app: `C:\ProgramData\AppUpdates\<AppId>\` (`update.log`, `PostponeState.json`).
