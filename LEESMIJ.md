@@ -2,7 +2,7 @@
 
 *English: see [README.md](README.md).*
 
-Elke app krijgt dezelfde vensters als Omnissa:
+Elke app krijgt dezelfde vensters:
 - **"Update beschikbaar"** rechtsonder, met het logo van de app en de knoppen *Later* / *Nu bijwerken*.
 - **Na de laatste keer uitstellen**: een waarschuwing "De update start over 5 minuten", met aftelklok en alleen de knop *Nu installeren*.
 - **Melding tijdens de installatie** met voortgangsbalk.
