@@ -2,6 +2,8 @@
 
 *Nederlands: zie [LEESMIJ.md](LEESMIJ.md).*
 
+> 📖 Walkthrough with screenshots on my blog (in Dutch): [AppUpdateKit: app updates via Intune with a clean popup](https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/).
+
 Every app gets the same popups:
 - **"Update available"** bottom right, with the app's logo and the buttons *Later* / *Update now*.
 - **After the last postpone**: a warning "The update starts in 5 minutes", with a countdown and only the button *Install now*.
