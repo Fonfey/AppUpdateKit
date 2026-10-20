@@ -173,6 +173,7 @@ In de Engelse teksten gebruik je `{Version}`, `{Minutes}` en `{MaxPostpones}`. B
 `Apps\` en `Output\` zijn leeg. Maak je eerste app met **+ Nieuwe app** in de Builder, of met `.\1-New-App.ps1`. Gebouwde pakketten komen in `Output\`.
 
 ## Testen op een laptop
+- Start de Builder niet, of wisselt hij niet van taal? Dubbelklik op `Diagnose-Builder.cmd`. Dat past niets aan en opent `Diagnose-Builder.txt` met de details.
 - Log en teller per app: `C:\ProgramData\AppUpdates\<AppId>\` (`update.log`, `PostponeState.json`).
 - Waarschuwing van 5 minuten direct testen: zet `PostponeCount` op 5 en `PostponeUntil` in het verleden, en voer in een admin-PowerShell in de pakketmap `.\Ask-InstallConsent.ps1` uit.
 - Teller resetten: verwijder `PostponeState.json`.

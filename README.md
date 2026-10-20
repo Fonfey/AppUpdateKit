@@ -176,6 +176,7 @@ The Dutch forms `{Versie}`, `{Minuten}` and `{MaxUitstel}` work too.
 `Apps\` and `Output\` are empty. Create your first app with **+ New app** in the Builder, or with `.\1-New-App.ps1`. Built packages appear in `Output\`.
 
 ## Testing on a laptop
+- Builder does not start or does not switch language? Double-click `Diagnose-Builder.cmd`. It changes nothing and opens `Diagnose-Builder.txt` with the details.
 - Log and counter per app: `C:\ProgramData\AppUpdates\<AppId>\` (`update.log`, `PostponeState.json`).
 - Test the 5-minute warning right away: set `PostponeCount` to 5 and `PostponeUntil` in the past, and run `.\Ask-InstallConsent.ps1` in an admin PowerShell in the package folder.
 - Reset the counter: delete `PostponeState.json`.
