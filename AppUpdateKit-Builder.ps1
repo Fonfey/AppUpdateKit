@@ -1100,33 +1100,40 @@ $UiTextEn = @{
 
 function Convert-XamlLanguage
 {
-    # Replaces the Dutch texts in a XAML document by English (only when the Builder language is English)
-    param ([xml]$Doc)
-    if ($script:Lang -ne 'en') { return $Doc }
+    # Returns the XAML text with the Dutch texts replaced by English (only when the Builder language is English).
+    # Works on the text and returns text: Windows PowerShell 5.1 does not reliably pass an XmlDocument
+    # through a function (it enumerates its child nodes), so no XmlDocument goes in or out.
+    param ([string]$Text)
+    if ($script:Lang -ne 'en') { return $Text }
+    $doc = New-Object System.Xml.XmlDocument
+    $doc.PreserveWhitespace = $true
+    $doc.LoadXml($Text)
     $attrs = 'Content', 'Text', 'Header', 'Title', 'ToolTip'
-    foreach ($el in $Doc.SelectNodes('//*'))
+    foreach ($el in @($doc.SelectNodes('//*')))
     {
-        $byName = if ($el.GetAttribute('Name')) { $UiTextEn["name:$($el.GetAttribute('Name'))"] }
-        $byTag  = if ($el.LocalName -eq 'ComboBoxItem' -and $el.GetAttribute('Tag')) { $UiTextEn["tag:$($el.GetAttribute('Tag'))"] }
+        $name = $el.GetAttribute('Name')
+        $byName = if ($name) { $UiTextEn["name:$name"] } else { $null }
+        $tag = $el.GetAttribute('Tag')
+        $byTag  = if ($el.LocalName -eq 'ComboBoxItem' -and $tag) { $UiTextEn["tag:$tag"] } else { $null }
         foreach ($a in $attrs)
         {
             $v = $el.GetAttribute($a)
             if (-not $v) { continue }
             if ($a -eq 'Content' -and $byName) { $el.SetAttribute($a, $byName); continue }
             if ($a -eq 'Content' -and $byTag)  { $el.SetAttribute($a, $byTag);  continue }
-            if ($UiTextEn.ContainsKey($v)) { $el.SetAttribute($a, $UiTextEn[$v]) }
+            if ($UiTextEn.ContainsKey($v)) { $el.SetAttribute($a, [string]$UiTextEn[$v]) }
         }
         # <TextBlock>text</TextBlock>
         foreach ($child in @($el.ChildNodes))
         {
-            if ($child.NodeType -eq 'Text')
+            if ($child.NodeType -eq [System.Xml.XmlNodeType]::Text)
             {
                 $v = $child.Value.Trim()
-                if ($UiTextEn.ContainsKey($v)) { $child.Value = $UiTextEn[$v] }
+                if ($UiTextEn.ContainsKey($v)) { $child.Value = [string]$UiTextEn[$v] }
             }
         }
     }
-    return $Doc
+    return [string]$doc.OuterXml
 }
 
 if ($env:APPKIT_NOGUI) { return }   # for tests: only load the functions
@@ -1170,7 +1177,7 @@ trap
     exit 1
 }
 
-[xml]$xaml = @'
+$xamlText = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="AppUpdateKit Builder" Width="1060" Height="760" MinWidth="900" MinHeight="600"
@@ -1632,7 +1639,7 @@ trap
 </Window>
 '@
 
-$xaml = Convert-XamlLanguage $xaml
+[xml]$xaml = Convert-XamlLanguage $xamlText
 $Window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
 if (Test-Path $BuilderIcon) { try { $Window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([uri]$BuilderIcon) } catch { } }
 
@@ -1883,7 +1890,7 @@ function Get-SelectedVersion
 function Show-StandardTextsEditor
 {
     # Small window to edit _Kit\DefaultTexts.psd1 (applies to all apps), Dutch and English
-    [xml]$x = @'
+    $xText = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         Title="Standaardteksten voor alle apps" Width="760" Height="680" WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8">
@@ -1907,7 +1914,7 @@ function Show-StandardTextsEditor
   </DockPanel>
 </Window>
 '@
-    $x = Convert-XamlLanguage $x
+    [xml]$x = Convert-XamlLanguage $xText
     $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
     $w.Owner = $Window
     $w.Icon = $Window.Icon
