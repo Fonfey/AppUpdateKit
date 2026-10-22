@@ -2263,14 +2263,17 @@ function Get-OutputRoot
     return $p
 }
 
-function Set-StartFolder($Dialog)
+function Set-StartFolder($Dialog, [switch]$NewInstaller)
 {
-    # Bestandskeuzevenster openen in de map van de huidige installer, anders in de standaardmap (_Kit\Instellingen.psd1)
+    # Bestandskeuzevenster openen in de map van de huidige installer, anders in de standaardmap (_Kit\Instellingen.psd1).
+    # Bij een nieuwe installer (een update) in de map 'versies', zodat alle versies naast elkaar staan.
     $candidates = @()
     $o = $ui.TxtOutputFolder.Text.Trim()
     if ($o)
     {
         $versionDir = Split-Path $o -Parent
+        $versionsDir = Split-Path $versionDir -Parent
+        if ($NewInstaller -and $versionsDir -and (Split-Path $versionsDir -Leaf) -ieq 'versies') { $candidates += $versionsDir }
         $candidates += (Join-Path $versionDir 'source')   # daar staan meestal de installers
         $candidates += $versionDir
     }
@@ -3067,7 +3070,7 @@ $ui.BtnInstaller.Add_Click({
     # Tabblad 1: de installer van de app zelf = het hoofdonderdeel
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.Filter = 'Installers (*.exe;*.msi)|*.exe;*.msi'
-    Set-StartFolder $dlg
+    Set-StartFolder $dlg -NewInstaller
     if (-not $dlg.ShowDialog()) { return }
     $script:LastInstallerPath = $dlg.FileName   # startpunt voor 'Kiezen...' bij 'Pakket opslaan in'
     $src = $dlg.FileName; $dir = Get-AppFolder
@@ -3119,6 +3122,21 @@ $ui.BtnInstaller.Add_Click({
         $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
     }
     Update-FileList
+
+    # Pakket opslaan in: past die nog bij de map van deze installer? Bij een update staat hij vaak nog op de vorige versie.
+    $newVersionDir = Get-VersionFolder $src
+    if ($newVersionDir -and -not (Test-InAppsFolder $newVersionDir))
+    {
+        $sub = $KitSettings.PakketSubmap
+        $newOut = if ($sub) { Join-Path $newVersionDir $sub } else { $newVersionDir }
+        $curOut = $ui.TxtOutputFolder.Text.Trim().TrimEnd('\')
+        if ($curOut -ine $newOut.TrimEnd('\'))
+        {
+            $q = if ($curOut) { "Pakket opslaan in staat nog op:`n`n$curOut`n`nAanpassen naar de map van de gekozen installer?`n`n$newOut" }
+                 else { "Pakket opslaan in invullen met de map van de gekozen installer?`n`n$newOut" }
+            if ([System.Windows.MessageBox]::Show($q, 'Pakket opslaan in', 'YesNo', 'Question') -eq 'Yes') { $ui.TxtOutputFolder.Text = $newOut }
+        }
+    }
     Set-Status "Installer $name toegevoegd als hoofdonderdeel. Controleer versie, processen en tabblad 2."
 })
 

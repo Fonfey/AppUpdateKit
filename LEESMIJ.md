@@ -63,7 +63,7 @@ Bij *Minimale versie* vul je een ander nummer in als de app zich anders registre
 
 **In Intune na een fix van dezelfde versie:** open de bestaande app → *Properties* → *App information* → *Edit* → *Select file to update* en kies de nieuwe `install.intunewin`. Een **nieuwe versie** voeg je toe als nieuwe Win32-app, met supersedence op de vorige.
 
-**Nieuwe versie van een app?** Kies in tabblad 1 de nieuwe installer. De Builder vult de nieuwe versie in en biedt aan de oude installer uit de app-map te halen. Pas eventueel de teksten aan en klik op *Bouw pakket*. De vorige versie blijft gewoon bewaard.
+**Nieuwe versie van een app?** Kies in tabblad 1 de nieuwe installer; het kiesvenster opent in de map `versies` van die app, zodat je de nieuwe versie er zo bij pakt. De Builder vult de nieuwe versie in, biedt aan de oude installer uit de app-map te halen en vraagt of *Pakket opslaan in* naar de map van de nieuwe versie mag (bijv. `...\versies\<nieuw>\intune-package`). Pas eventueel de teksten aan en klik op *Bouw pakket*. De vorige versie blijft gewoon bewaard.
 
 **Standaardteksten voor alle apps** bewerk je in tabblad 3 met *Standaardteksten voor alle apps bewerken...*. Ze staan in `_Kit\Standaardteksten.psd1`. Een eigen tekst bij een app gaat altijd voor.
 
