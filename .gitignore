@@ -4,6 +4,6 @@ Builder-fouten.log
 IntuneWinAppUtil.exe
 # Apps en gebouwde pakketten blijven lokaal
 Apps/*
-!Apps/.keep
+!Apps/LEESMIJ.txt
 Output/*
-!Output/.keep
+!Output/LEESMIJ.txt
