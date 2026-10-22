@@ -1333,6 +1333,34 @@ $ThemeXaml = @'
       </Setter>
     </Style>
 
+    <!-- Keuzerondjes -->
+    <Style TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Grid Background="Transparent">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Border Name="Ring" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#9AA3AF" Background="White" VerticalAlignment="Center">
+                <Ellipse Name="Dot" Width="8" Height="8" Fill="#185FA5" Visibility="Collapsed"/>
+              </Border>
+              <ContentPresenter Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Ring" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Ring" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- Keuzelijsten -->
     <Style TargetType="ComboBoxItem">
       <Setter Property="Padding" Value="8,6"/>
@@ -2180,6 +2208,7 @@ $script:TextHints = @{}
 
 function Set-Status([string]$Text) { $ui.TxtStatus.Text = $Text }
 function Show-Error([string]$Text) { [void][System.Windows.MessageBox]::Show($Text, 'AppUpdateKit Builder', 'OK', 'Warning') }
+function Show-Info([string]$Text) { [void][System.Windows.MessageBox]::Show($Text, 'AppUpdateKit Builder', 'OK', 'Information') }
 
 $script:ErrorLog = Join-Path $KitRoot 'Builder-fouten.log'
 function Write-BuilderError($ErrorRecord)
@@ -2322,16 +2351,123 @@ function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
     return $info
 }
 
+function Get-FileUse([string]$Name)
+{
+    # Wat de installatie met een bestand uit de app-map doet (voor de lijst "Bestanden in het pakket")
+    if (@($script:Components | ForEach-Object { $_.File }) -contains $Name) { return 'onderdeel (tabblad 2)' }
+    $steps = "$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)"
+    $m = [regex]::Match($steps, 'copy /Y "' + [regex]::Escape($Name) + '" "([^"]+)"', 'IgnoreCase')
+    if ($m.Success) { return "kopiëren naar $($m.Groups[1].Value.TrimEnd('\'))" }
+    if ($steps -match [regex]::Escape($Name)) { return 'gebruikt in extra stappen' }
+    if ($Name -in @('app.ico', 'logo.svg')) { return 'logo' }
+    return 'nog niet gebruikt in een stap'
+}
+
 function Update-FileList
 {
     $ui.LstFiles.Items.Clear()
     $dir = Get-AppFolder
     if (-not $dir) { return }
     $skip = @('app.psd1', 'install-app.cmd', 'uninstall-app.cmd')
-    Get-ChildItem $dir -File | Where-Object { $_.Name -notin $skip } | Sort-Object Name | ForEach-Object {
+    Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -notin $skip } | Sort-Object Name | ForEach-Object {
         $size = if ($_.Length -ge 1MB) { '{0:N0} MB' -f ($_.Length / 1MB) } else { '{0:N0} kB' -f [math]::Max(1, $_.Length / 1KB) }
-        [void]$ui.LstFiles.Items.Add("$($_.Name)   ($size)")
+        [void]$ui.LstFiles.Items.Add("$($_.Name)   ($size)   ->  $(Get-FileUse $_.Name)")
     }
+}
+
+function Test-InstallerFile([string]$Name)
+{
+    return ([System.IO.Path]::GetExtension($Name).ToLower() -in @('.exe', '.msi', '.msp', '.ps1', '.cmd', '.bat', '.reg'))
+}
+
+function Remove-CopyStep([string]$Name, [string]$Text)
+{
+    # Haalt het blok "rem Bestand: <naam> kopieren naar ..." (plus de md- en copy-regel) uit de extra stappen
+    $out = New-Object System.Collections.Generic.List[string]
+    $lines = @("$Text" -split "`r?`n")
+    for ($i = 0; $i -lt $lines.Count; $i++)
+    {
+        if ($lines[$i] -like "rem Bestand: $Name kopieren naar *")
+        {
+            while ($i + 1 -lt $lines.Count -and ($lines[$i + 1] -like 'if not exist "*" md "*"' -or $lines[$i + 1] -like "copy /Y `"$Name`" *")) { $i++ }
+            continue
+        }
+        $out.Add($lines[$i])
+    }
+    return (($out -join "`r`n").TrimEnd())
+}
+
+function Add-CopyStep([string]$Name, [string]$Target)
+{
+    # Zet een kopieerstap in "Extra stappen na de onderdelen" (vervangt een eerdere stap voor hetzelfde bestand)
+    $t = $Target.Trim().TrimEnd('\')
+    $block = "rem Bestand: $Name kopieren naar $t`r`nif not exist `"$t\`" md `"$t`"`r`ncopy /Y `"$Name`" `"$t\`" >nul"
+    $cur = Remove-CopyStep $Name $ui.TxtPostInstall.Text
+    $ui.TxtPostInstall.Text = if ($cur) { "$cur`r`n$block" } else { $block }
+}
+
+$FileActionXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bestand toevoegen" Width="580" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI" FontSize="13" Background="#F4F6F9" Foreground="#1F2937" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+<!--THEMA-->
+  </Window.Resources>
+  <StackPanel Margin="20">
+    <TextBlock Name="TxtTitle" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+    <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,14" Text="Het bestand gaat mee in het pakket. Kies wat de installatie ermee doet; de Builder zet de stap klaar in tabblad 2."/>
+    <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+      <StackPanel>
+        <RadioButton Name="OptComp" GroupName="Actie" Content="Installeren als onderdeel (met eigen parameters en exitcodes)" Margin="0,0,0,10"/>
+        <RadioButton Name="OptCopy" GroupName="Actie" Content="Kopiëren naar een map op de laptop"/>
+        <TextBox Name="TxtTarget" Margin="22,6,0,4"/>
+        <TextBlock Style="{StaticResource Hint}" Margin="22,0,0,10" Text="Bijv. %ProgramData%\Mijn app of %ProgramFiles%\Mijn app. De installatie draait als SYSTEM: %APPDATA% en %USERPROFILE% wijzen dan niet naar de gebruiker."/>
+        <RadioButton Name="OptKeep" GroupName="Actie" Content="Alleen meenemen in het pakket (ik gebruik het zelf in een extra stap)"/>
+      </StackPanel>
+    </Border>
+    <CheckBox Name="ChkAll" Margin="0,0,0,12"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Name="BtnCancel" Content="Overslaan"/>
+      <Button Name="BtnOk" Content="Toevoegen" Style="{StaticResource Primary}" Margin="0"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
+'@
+
+function Show-FileActionDialog([string]$Name, [int]$Others)
+{
+    # Vraagt wat er met een toegevoegd bestand moet gebeuren. Geeft @{ Action; Target; All } terug, of $null bij Overslaan.
+    [xml]$x = $FileActionXaml.Replace('<!--THEMA-->', $ThemeXaml)
+    $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
+    $w.Owner = $Window; $w.Icon = $Window.Icon
+    $f = @{}
+    foreach ($n in 'TxtTitle', 'OptComp', 'OptCopy', 'OptKeep', 'TxtTarget', 'ChkAll', 'BtnOk', 'BtnCancel') { $f[$n] = $w.FindName($n) }
+    $f.TxtTitle.Text = "Wat moet de installatie doen met $Name?"
+    $isInstaller = Test-InstallerFile $Name
+    $f.OptComp.IsEnabled = $isInstaller
+    if (-not $isInstaller) { $f.OptComp.Content = 'Installeren als onderdeel (alleen voor .exe, .msi, .msp, .ps1, .cmd, .bat en .reg)' }
+    if ([System.IO.Path]::GetExtension($Name).ToLower() -in @('.exe', '.msi', '.msp')) { $f.OptComp.IsChecked = $true } else { $f.OptCopy.IsChecked = $true }
+    $appName = if ($ui.TxtAppName.Text.Trim()) { $ui.TxtAppName.Text.Trim() } else { "$script:CurrentApp" }
+    $f.TxtTarget.Text = "%ProgramData%\$appName"
+    $f.TxtTarget.IsEnabled = [bool]$f.OptCopy.IsChecked
+    $f.OptCopy.Add_Checked({ $f.TxtTarget.IsEnabled = $true })
+    $f.OptCopy.Add_Unchecked({ $f.TxtTarget.IsEnabled = $false })
+    if ($Others -gt 0) { $f.ChkAll.Content = "Hetzelfde doen met de andere $Others gekozen bestand$(if ($Others -gt 1) { 'en' })" }
+    else { $f.ChkAll.Visibility = 'Collapsed' }
+    $script:FileActionResult = $null
+    $f.BtnOk.Add_Click({
+        $action = if ($f.OptComp.IsChecked) { 'Onderdeel' } elseif ($f.OptCopy.IsChecked) { 'Kopieren' } else { 'Meenemen' }
+        if ($action -eq 'Kopieren' -and -not $f.TxtTarget.Text.Trim())
+        {
+            [void][System.Windows.MessageBox]::Show($w, 'Vul de map in waar het bestand naartoe moet.', 'Bestand toevoegen', 'OK', 'Warning'); return
+        }
+        $script:FileActionResult = @{ Action = $action; Target = $f.TxtTarget.Text.Trim(); All = [bool]$f.ChkAll.IsChecked }
+        $w.Close()
+    })
+    $f.BtnCancel.Add_Click({ $w.Close() })
+    [void]$w.ShowDialog()
+    return $script:FileActionResult
 }
 
 function Update-VersionList
@@ -3050,6 +3186,8 @@ $ui.InfoTimes.Add_MouseLeftButtonUp({
 })
 $ui.ChkIdle.Add_Click({ Update-WindowHint })
 $ui.TxtPostInstall.Add_TextChanged({ Update-InstallPreview })
+$ui.TxtPostInstall.Add_LostFocus({ Update-FileList })
+$ui.TxtPreInstall.Add_LostFocus({ Update-FileList })
 $ui.ChkAutoSteps.Add_Click({
     if (-not $ui.ChkAutoSteps.IsChecked)
     {
@@ -3106,8 +3244,35 @@ $ui.BtnAddFiles.Add_Click({
     $dlg.Multiselect = $true
     Set-StartFolder $dlg
     if (-not $dlg.ShowDialog()) { return }
-    foreach ($f in $dlg.FileNames) { Copy-Item -LiteralPath $f -Destination (Get-AppFolder) -Force }
-    Update-FileList
+    $files = @($dlg.FileNames)
+    $all = $null; $added = @(); $copied = @()
+    for ($i = 0; $i -lt $files.Count; $i++)
+    {
+        $fn = $files[$i]; $name = [System.IO.Path]::GetFileName($fn)
+        # "Hetzelfde voor alle bestanden" geldt niet voor "onderdeel" bij een bestand dat geen installer is
+        $choice = if ($all -and -not ($all.Action -eq 'Onderdeel' -and -not (Test-InstallerFile $name))) { $all } else { Show-FileActionDialog $name ($files.Count - $i - 1) }
+        if (-not $choice) { continue }
+        if ($choice.All) { $all = $choice }
+        switch ($choice.Action)
+        {
+            'Onderdeel'
+            {
+                [void](Add-ComponentFile $fn $false)
+                # Nieuwe onderdelen vóór het hoofdonderdeel (meestal een voorbereiding, zoals een runtime)
+                $main = $script:Components | Where-Object { $_.Main } | Select-Object -First 1
+                if ($main) { $mi = $script:Components.IndexOf($main); if ($mi -lt $script:Components.Count - 1) { $script:Components.Move($mi, $script:Components.Count - 1) } }
+                $added += $name
+            }
+            'Kopieren' { Copy-Item -LiteralPath $fn -Destination (Get-AppFolder) -Force; Add-CopyStep $name $choice.Target; $copied += $name }
+            default    { Copy-Item -LiteralPath $fn -Destination (Get-AppFolder) -Force }
+        }
+    }
+    Update-InstallPreview; Update-FileList
+    if ($copied -and -not $ui.ChkAutoSteps.IsChecked)
+    {
+        Show-Info "De kopieerstappen staan in 'Extra stappen na de onderdelen'. Je schrijft de installatiestappen met de hand (automatisch maken staat uit): neem ze daar ook over."
+    }
+    elseif ($added -or $copied) { Set-Status "Toegevoegd: $((@($added) + @($copied)) -join ', '). Zie tabblad 2 voor de stappen." }
 })
 
 $ui.BtnRemoveFile.Add_Click({
@@ -3117,7 +3282,11 @@ $ui.BtnRemoveFile.Add_Click({
     if ([System.Windows.MessageBox]::Show("$name verwijderen uit de app-map?", 'Verwijderen', 'YesNo', 'Question') -eq 'Yes')
     {
         Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $name) -Force
-        Update-FileList; Update-IconPreview
+        $ui.TxtPostInstall.Text = Remove-CopyStep $name $ui.TxtPostInstall.Text
+        foreach ($c in @($script:Components | Where-Object { $_.File -eq $name })) { [void]$script:Components.Remove($c) }
+        $ui.DgComponents.Items.Refresh()
+        if ("$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)" -match [regex]::Escape($name)) { Show-Info "$name wordt nog genoemd in de extra stappen (tabblad 2). Haal die regels weg, anders mislukt de installatie." }
+        Update-InstallPreview; Update-FileList; Update-IconPreview
     }
 })
 
