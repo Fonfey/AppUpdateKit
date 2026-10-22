@@ -5,8 +5,8 @@
     InstallerMap = ''   # bijv. 'I:\Software\projecten\'
 
     # Kies je bij 'Pakket opslaan in' de versiemap, dan zet de Builder deze submap erachter:
-    #   gekozen: I:\Software\projecten\omnissa\horizon client\versies\8.18.0.51429
-    #   pakket : I:\Software\projecten\omnissa\horizon client\versies\8.18.0.51429\intune-package
+    #   gekozen: I:\Software\projecten\7-Zip\versies\24.09
+    #   pakket : I:\Software\projecten\7-Zip\versies\24.09\intune-package
     # Leeg = de gekozen map zelf.
     PakketSubmap = 'intune-package'
 }

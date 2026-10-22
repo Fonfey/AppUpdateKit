@@ -39,7 +39,7 @@ Dubbelklik daarna op **`Start-Builder.cmd`**. Na de eerste keer kun je ook de sn
      - **zelfde versienummer** = die versie verbeteren (de vorige build gaat naar het archief);
      - **nieuwe installer of nieuw versienummer** = een nieuwe versie.
 
-**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\omnissa\horizon client\versies\8.18.0.51429`. De Builder zet er `\intune-package` achter. Het kiesvenster werkt zoals Verkenner: je kunt bovenin in de adresbalk een pad typen of plakken. Je kunt het pad ook direct in het tekstvak typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
+**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\7-Zip\versies\24.09`. De Builder zet er `\intune-package` achter. Het kiesvenster werkt zoals Verkenner: je kunt bovenin in de adresbalk een pad typen of plakken. Je kunt het pad ook direct in het tekstvak typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
 
 In `_Kit\Instellingen.psd1` staan twee instellingen voor de hele kit:
 - `InstallerMap`: de map waar *Kiezen...* standaard opent. Je stelt hem in bij de eerste keer opstarten, of later met de knop *Standaardmap...* links in de Builder. Hij komt dan in dit bestand, bijvoorbeeld `I:\Software\projecten\`.
@@ -75,7 +75,7 @@ Elke build maakt naast `install.intunewin` ook **`Intune\Install.ps1`** en **`In
 Het voordeel: de instellingen, teksten, installatieparameters en extra stappen staan in dat script, niet in het pakket. Pas je daar iets aan, dan doe je dat direct in Intune, zonder opnieuw te verpakken. Opnieuw verpakken is alleen nodig bij een nieuwe installer, een ander logo of een nieuwe kit-versie.
 
 Bovenaan `Install.ps1` staat wat je mag aanpassen:
-1. **Schakelaars:** `$GeenProcescheck`, `$GeenPopup`, `$Stil`, plus eigen schakelaars zoals `NOSHORTCUTS` voor Omnissa.
+1. **Schakelaars:** `$GeenProcescheck`, `$GeenPopup`, `$Stil`, plus eigen schakelaars, bijvoorbeeld `NOSHORTCUTS` om het maken van snelkoppelingen over te slaan.
 2. **Instellingen en teksten:** zelfde velden als `app.psd1`.
 3. **Installatiestappen:** per onderdeel de opdrachtregel en de exitcodes die als gelukt tellen, plus de extra cmd-regels ervoor en erna.
 
@@ -133,7 +133,7 @@ Staat de optie uit, dan slaat het pakket de inrichting over en komt de app daarn
    - `app.ico`: het logo.
    - De installer(s) en eventuele extra bestanden (config, scripts, snelkoppelingen).
    - `install-app.cmd`: je installatiestappen met hun parameters. Voorbeelden voor MSI, NSIS, Inno en andere installers staan in het bestand.
-   - `uninstall-app.cmd`: je verwijderstappen. Lukt verwijderen via de setup.exe niet (exitcode 1605, zoals bij Omnissa), gebruik dan `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "<naam in Apps en onderdelen>"`. Dat zoekt de app op en verwijdert hem via de MSI-productcode of het eigen verwijderprogramma.
+   - `uninstall-app.cmd`: je verwijderstappen. Lukt verwijderen via de setup.exe niet (bijvoorbeeld exitcode 1605), gebruik dan `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "<naam in Apps en onderdelen>"`. Dat zoekt de app op en verwijdert hem via de MSI-productcode of het eigen verwijderprogramma.
 
 ```powershell
 # 3. Pakket bouwen (controleert ook of alles klopt)

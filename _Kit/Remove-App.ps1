@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Gebruik in uninstall-app.cmd:
-      powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "Omnissa Horizon Client"
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "7-Zip"
 
     - Zoekt in de Uninstall-registersleutels (64- en 32-bit) naar alles waarvan de naam begint met -Name.
     - MSI-installaties: msiexec /x {productcode} /qn /norestart (werkt ook als de setup.exe dat niet kan).

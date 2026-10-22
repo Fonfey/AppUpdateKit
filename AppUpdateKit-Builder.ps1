@@ -179,8 +179,8 @@ function ConvertTo-StandardTextsPsd1
 function Get-VersionFolder([string]$InstallerPath)
 {
     # Versiemap bij een installer, als startpunt voor 'Kiezen...' bij 'Pakket opslaan in' (vult niets automatisch in):
-    #   ...\versies\8.18.0.51429\source\setup.exe      -> ...\versies\8.18.0.51429
-    #   ...\versies\8.18.0.51429\source\x64\setup.exe  -> ...\versies\8.18.0.51429
+    #   ...\versies\2.4.0\source\setup.exe      -> ...\versies\2.4.0
+    #   ...\versies\2.4.0\source\x64\setup.exe  -> ...\versies\2.4.0
     #   ...\8.9.8.1\source\npp.exe                      -> ...\8.9.8.1
     $dir = Split-Path $InstallerPath -Parent
     $d = $dir
@@ -1712,7 +1712,7 @@ $xamlText = @'
                   <Button DockPanel.Dock="Right" Name="BtnOutputFolder" Content="Kiezen..." Margin="8,2,0,8"/>
                   <TextBox Name="TxtOutputFolder"/>
                 </DockPanel>
-                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\8.18.0.51429. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken."/>
+                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken."/>
               </StackPanel>
             </Border>
 
@@ -1733,7 +1733,7 @@ $xamlText = @'
                   <TextBox Name="TxtDetectName"/>
                   <Label Content="Processen die dicht moeten zijn"/>
                   <TextBox Name="TxtProcesses"/>
-                  <TextBlock Style="{StaticResource Hint}" Text="Zonder .exe, gescheiden door komma's. Bijv.: notepad++   of   vmware-view, horizon-client. Leeg = geen procescheck (voor apps zonder eigen programma, zoals een runtime of driver)."/>
+                  <TextBlock Style="{StaticResource Hint}" Text="Zonder .exe, gescheiden door komma's. Bijv.: notepad++   of   winword, excel. Leeg = geen procescheck (voor apps zonder eigen programma, zoals een runtime of driver)."/>
                   <CheckBox Name="ChkOnlyExisting" Content="Alleen bijwerken op apparaten waar de app al staat" Margin="0,6,0,0"/>
                   <CheckBox Name="ChkDuringSetup" Content="Installeren op nieuwe laptops (Autopilot), zonder popup" Margin="0,6,0,0"/>
                   <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Tijdens de inrichting wordt de app direct geïnstalleerd, ook als hij er nog niet op staat. Uit = de app komt pas na de inrichting, met popup."/>
@@ -2842,7 +2842,7 @@ function Confirm-OutputFolder
     $o = $ui.TxtOutputFolder.Text.Trim()
     if (-not $o)
     {
-        Show-Error "Kies eerst in tabblad 1 bij 'Pakket opslaan in' de map voor het pakket, bijv. ...\versies\8.18.0.51429\intune-package."
+        Show-Error "Kies eerst in tabblad 1 bij 'Pakket opslaan in' de map voor het pakket, bijv. ...\versies\2.4.0\intune-package."
         $ui.Tabs.SelectedIndex = 0
         return $false
     }
