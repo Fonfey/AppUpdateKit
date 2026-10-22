@@ -406,8 +406,10 @@ Detection rules
   Custom script      : Intune\Detection.ps1   ($detectText)
   32-bit: No  |  Signature check: No
 
-Supersedence
-  Voeg de vorige versie toe, Uninstall previous version: No
+Supersedence (alleen bij een nieuwe Win32-app in Intune; niet bij een fix van dezelfde versie)
+  Voeg de vorige versie toe. Uninstall previous version kies je zelf:
+    No  = de nieuwe versie installeert over de oude heen (gewone update)
+    Yes = de oude moet eerst weg, bijv. bij een andere productnaam
 
 Assignments
   Required. OnlyUpdateExisting = $onlyExisting
