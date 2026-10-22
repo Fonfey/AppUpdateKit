@@ -1056,90 +1056,517 @@ trap
     exit 1
 }
 
-[xml]$xaml = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AppUpdateKit Builder" Width="1060" Height="760" MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8"
-        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
-  <Window.Resources>
-    <Style TargetType="TextBox">
-      <Setter Property="Padding" Value="6,6"/>
-      <Setter Property="Margin" Value="0,2,0,8"/>
-      <Setter Property="BorderBrush" Value="#C8CCD2"/>
-    </Style>
+# Gedeeld thema voor alle Builder-vensters (knoppen, velden, tabbladen, lijsten, schuifbalken)
+$ThemeXaml = @'
+    <!-- Thema: kleuren -->
+    <SolidColorBrush x:Key="Accent" Color="#185FA5"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#144F8A"/>
+    <SolidColorBrush x:Key="AccentPress" Color="#0F3F6F"/>
+    <SolidColorBrush x:Key="AccentSoft" Color="#E8F0F9"/>
+    <SolidColorBrush x:Key="Line" Color="#D5DAE1"/>
+    <SolidColorBrush x:Key="LineHover" Color="#A9B2BE"/>
+    <SolidColorBrush x:Key="LineSoft" Color="#E6E9EE"/>
+    <SolidColorBrush x:Key="Hover" Color="#F1F4F8"/>
+    <SolidColorBrush x:Key="Ink" Color="#1F2937"/>
+    <SolidColorBrush x:Key="Muted" Color="#6B7280"/>
+
+    <!-- Tekst -->
     <Style TargetType="Label">
       <Setter Property="Padding" Value="0,4,0,0"/>
-      <Setter Property="Foreground" Value="#333"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style x:Key="Hint" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#6B7280"/>
-      <Setter Property="FontSize" Value="11.5"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontSize" Value="12"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="Margin" Value="0,-4,0,8"/>
     </Style>
-    <Style TargetType="ComboBox">
-      <Setter Property="Padding" Value="8,6,6,6"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-    </Style>
-    <Style TargetType="Button">
-      <Setter Property="Padding" Value="12,6"/>
-      <Setter Property="Margin" Value="0,0,8,0"/>
-      <Setter Property="Background" Value="White"/>
-      <Setter Property="BorderBrush" Value="#B0B6BE"/>
-      <Setter Property="Cursor" Value="Hand"/>
-    </Style>
-    <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Background" Value="#185FA5"/>
-      <Setter Property="Foreground" Value="White"/>
-      <Setter Property="BorderBrush" Value="#185FA5"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
     <Style x:Key="Card" TargetType="Border">
       <Setter Property="Background" Value="White"/>
-      <Setter Property="BorderBrush" Value="#E1E4E8"/>
+      <Setter Property="BorderBrush" Value="{StaticResource LineSoft}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="Padding" Value="16"/>
-      <Setter Property="Margin" Value="0,0,0,12"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="18"/>
+      <Setter Property="Margin" Value="0,0,0,14"/>
     </Style>
+    <Style TargetType="ToolTip">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="Padding" Value="8,6"/>
+    </Style>
+
+    <!-- Invoervelden: afgerond, blauwe rand bij focus -->
+    <Style TargetType="TextBox">
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="Margin" Value="0,2,0,8"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="SelectionBrush" Value="{StaticResource Accent}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" SnapsToDevicePixels="True">
+              <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource LineHover}"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Bd" Property="Opacity" Value="0.55"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Knoppen -->
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="14,6"/>
+      <Setter Property="Margin" Value="0,0,8,0"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" SnapsToDevicePixels="True">
+              <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Bd" Property="Opacity" Value="0.5"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="{StaticResource Hover}"/>
+          <Setter Property="BorderBrush" Value="{StaticResource LineHover}"/>
+        </Trigger>
+        <Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+        <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#E4E9F0"/></Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{StaticResource Accent}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="Background" Value="{StaticResource AccentHover}"/>
+          <Setter Property="BorderBrush" Value="{StaticResource AccentHover}"/>
+        </Trigger>
+        <Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="BorderBrush" Value="{StaticResource AccentPress}"/></Trigger>
+        <Trigger Property="IsPressed" Value="True">
+          <Setter Property="Background" Value="{StaticResource AccentPress}"/>
+          <Setter Property="BorderBrush" Value="{StaticResource AccentPress}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- Vinkjes -->
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Background="Transparent">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Border Name="Box" Width="18" Height="18" CornerRadius="4" BorderThickness="1.5" BorderBrush="#9AA3AF" Background="White" VerticalAlignment="Center">
+                <Path Name="Mark" Data="M 3 7.5 L 6.2 10.7 L 12 4.5" Stroke="White" StrokeThickness="2" Visibility="Collapsed"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+              </Border>
+              <ContentPresenter Name="Cp" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="HasContent" Value="False"><Setter TargetName="Cp" Property="Visibility" Value="Collapsed"/></Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background" Value="{StaticResource Accent}"/>
+                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Keuzelijsten -->
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border Name="Bd" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}"/>
+                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Padding" Value="10,6,30,6"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid SnapsToDevicePixels="True">
+              <ToggleButton Name="Toggle" Focusable="False" ClickMode="Press"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border Name="Bd" Background="White" BorderBrush="#D5DAE1" BorderThickness="1" CornerRadius="6">
+                      <Path HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" Data="M 0 0 L 4.5 4.5 L 9 0"
+                            Stroke="#6B7280" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#A9B2BE"/></Trigger>
+                      <Trigger Property="IsChecked" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#185FA5"/></Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <ContentPresenter Name="ContentSite" IsHitTestVisible="False" Margin="{TemplateBinding Padding}"
+                                Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}" HorizontalAlignment="Left"/>
+              <Popup Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True"
+                     Focusable="False" PopupAnimation="Fade" VerticalOffset="4">
+                <Grid MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,0,10,10">
+                  <Border Background="White" CornerRadius="8">
+                    <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="3" Direction="270" Opacity="0.16"/></Border.Effect>
+                  </Border>
+                  <Border Background="White" BorderBrush="#D5DAE1" BorderThickness="1" CornerRadius="8" Padding="4">
+                    <ScrollViewer SnapsToDevicePixels="True">
+                      <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                    </ScrollViewer>
+                  </Border>
+                </Grid>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Lijsten -->
+    <Style TargetType="ListBox">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="4"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBox">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+              <ScrollViewer Focusable="False"><ItemsPresenter/></ScrollViewer>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ListBoxItem">
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Margin" Value="0,1"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border Name="Bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}"/>
+                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ListView">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    </Style>
+    <Style TargetType="GridViewColumnHeader">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="GridViewColumnHeader">
+            <Border Background="#F7F8FA" BorderBrush="#E6E9EE" BorderThickness="0,0,0,1" Padding="8,7">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ListViewItem">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListViewItem">
+            <Border Name="Bd" Background="Transparent" BorderBrush="#EEF0F3" BorderThickness="0,0,0,1" Padding="2,6" SnapsToDevicePixels="True">
+              <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{TemplateBinding GridView.ColumnCollection}" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}"/></Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}"/>
+                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Tabel (onderdelen) -->
+    <Style TargetType="DataGridColumnHeader">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="DataGridColumnHeader">
+            <Border Background="#F7F8FA" BorderBrush="#E6E9EE" BorderThickness="0,0,0,1" Padding="8,7">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="DataGridCell">
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="6,0"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Style.Triggers>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+          <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style TargetType="DataGrid">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="RowBackground" Value="White"/>
+      <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+      <Style.Resources>
+        <!-- Bij bewerken in een cel: gewoon tekstvak zonder afronding en marges -->
+        <Style TargetType="TextBox">
+          <Setter Property="Padding" Value="2,0"/>
+          <Setter Property="Margin" Value="0"/>
+          <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+      </Style.Resources>
+    </Style>
+
+    <!-- Tabbladen: platte tabs met een blauwe streep onder het actieve tabblad -->
+    <Style TargetType="TabControl">
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TabControl">
+            <DockPanel>
+              <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineSoft}" BorderThickness="0,0,0,1" Margin="0,0,0,4">
+                <TabPanel IsItemsHost="True" Background="Transparent"/>
+              </Border>
+              <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" Margin="{TemplateBinding Padding}"/>
+            </DockPanel>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="TabItem">
+      <Setter Property="Padding" Value="14,9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TabItem">
+            <Grid Background="Transparent">
+              <ContentPresenter Name="Hdr" ContentSource="Header" Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                                HorizontalAlignment="Center" TextElement.Foreground="#6B7280"/>
+              <Border Name="Bar" Height="3" VerticalAlignment="Bottom" CornerRadius="1.5" Margin="8,0,8,-1" Background="Transparent"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Hdr" Property="TextElement.Foreground" Value="#1F2937"/>
+                <Setter TargetName="Bar" Property="Background" Value="#D5DAE1"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Hdr" Property="TextElement.Foreground" Value="#185FA5"/>
+                <Setter TargetName="Hdr" Property="TextElement.FontWeight" Value="SemiBold"/>
+                <Setter TargetName="Bar" Property="Background" Value="#185FA5"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Smalle schuifbalken -->
+    <Style x:Key="ScrollPage" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="IsTabStop" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ScrollThumb" TargetType="Thumb">
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="IsTabStop" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Thumb">
+            <Border Name="T" CornerRadius="4" Background="#C3C9D1" Margin="2"/>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="Background" Value="#9AA3AF"/></Trigger>
+              <Trigger Property="IsDragging" Value="True"><Setter TargetName="T" Property="Background" Value="#7D8693"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ScrollBar">
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Width" Value="11"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Grid Background="Transparent">
+              <Track Name="PART_Track" IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource ScrollPage}"/></Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource ScrollPage}"/></Track.IncreaseRepeatButton>
+                <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" MinHeight="24"/></Track.Thumb>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto"/>
+          <Setter Property="Height" Value="11"/>
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="ScrollBar">
+                <Grid Background="Transparent">
+                  <Track Name="PART_Track" IsDirectionReversed="False">
+                    <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageLeftCommand" Style="{StaticResource ScrollPage}"/></Track.DecreaseRepeatButton>
+                    <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageRightCommand" Style="{StaticResource ScrollPage}"/></Track.IncreaseRepeatButton>
+                    <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" MinWidth="24"/></Track.Thumb>
+                  </Track>
+                </Grid>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+'@
+
+$xamlText = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AppUpdateKit Builder" Width="1120" Height="800" MinWidth="940" MinHeight="620"
+        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13" Background="#F4F6F9" Foreground="#1F2937"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+<!--THEMA-->
   </Window.Resources>
 
   <DockPanel>
     <!-- Kop -->
-    <Border DockPanel.Dock="Top" Background="#185FA5" Padding="18,12">
-      <StackPanel>
-        <TextBlock Text="AppUpdateKit Builder" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
-        <TextBlock Text="Vul de gegevens in, bekijk de popup en bouw het Intune-pakket." Foreground="#D6E6F7"/>
-      </StackPanel>
+    <Border DockPanel.Dock="Top" Background="#185FA5" Padding="20,14">
+      <DockPanel>
+        <Border DockPanel.Dock="Left" Width="42" Height="42" CornerRadius="10" Background="White" Margin="0,0,14,0">
+          <Grid>
+            <TextBlock Name="TxtHeaderGlyph" Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="#185FA5"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Image Name="ImgHeader" Width="28" Height="28" RenderOptions.BitmapScalingMode="HighQuality"/>
+          </Grid>
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="AppUpdateKit Builder" Foreground="White" FontSize="19" FontWeight="SemiBold"/>
+          <TextBlock Text="Vul de gegevens in, bekijk de popup en bouw het Intune-pakket." Foreground="#CFE0F3" FontSize="12.5" Margin="0,1,0,0"/>
+        </StackPanel>
+      </DockPanel>
     </Border>
 
     <!-- Onderbalk -->
-    <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="#E1E4E8" BorderThickness="0,1,0,0" Padding="16,10">
+    <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="#E6E9EE" BorderThickness="0,1,0,0" Padding="20,12">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button Name="BtnSave" Content="Opslaan"/>
           <Button Name="BtnOpenOutput" Content="Map met pakket openen" IsEnabled="False"/>
           <Button Name="BtnBuild" Content="Bouw pakket (.intunewin)" Style="{StaticResource Primary}" Margin="0"/>
         </StackPanel>
-        <TextBlock Name="TxtStatus" VerticalAlignment="Center" Foreground="#555" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Name="TxtStatus" VerticalAlignment="Center" Foreground="#6B7280" TextTrimming="CharacterEllipsis"/>
       </DockPanel>
     </Border>
 
     <!-- Apps -->
-    <Border DockPanel.Dock="Left" Width="210" Background="White" BorderBrush="#E1E4E8" BorderThickness="0,0,1,0" Padding="12">
+    <Border DockPanel.Dock="Left" Width="230" Background="White" BorderBrush="#E6E9EE" BorderThickness="0,0,1,0" Padding="14,16">
       <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Text="Apps" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"/>
+        <TextBlock DockPanel.Dock="Top" Text="APPS" FontWeight="SemiBold" FontSize="11" Foreground="#6B7280" Margin="10,0,0,8"/>
         <Button DockPanel.Dock="Bottom" Name="BtnInstallerMap" Content="Standaardmap..." Margin="0,6,0,0"
                 ToolTip="Map waar 'Kiezen...' standaard opent bij het kiezen van een installer (_Kit\Instellingen.psd1)"/>
-        <Button DockPanel.Dock="Bottom" Name="BtnNewApp" Content="+ Nieuwe app" Margin="0,8,0,0"/>
-        <ListBox Name="LstApps" BorderThickness="0"/>
+        <Button DockPanel.Dock="Bottom" Name="BtnNewApp" Content="+ Nieuwe app" Margin="0,8,0,0" Style="{StaticResource Primary}"/>
+        <ListBox Name="LstApps" BorderThickness="0" Padding="0"/>
       </DockPanel>
     </Border>
 
     <!-- Tabbladen -->
-    <TabControl Name="Tabs" Margin="12" IsEnabled="False">
+    <TabControl Name="Tabs" Margin="16,10,16,0" IsEnabled="False">
 
       <TabItem Header="1. Basis">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1149,7 +1576,7 @@ trap
                 <Label Content="Installer"/>
                 <DockPanel>
                   <Button DockPanel.Dock="Right" Name="BtnInstaller" Content="Kiezen..." Margin="8,2,0,8"/>
-                  <TextBox Name="TxtInstaller" IsReadOnly="True" Background="#F7F7F7"/>
+                  <TextBox Name="TxtInstaller" IsReadOnly="True" Background="#F7F8FA"/>
                 </DockPanel>
                 <TextBlock Name="TxtInstallerInfo" Style="{StaticResource Hint}" Text="Kies de installer (.exe of .msi). Naam, versie en stille parameters worden dan automatisch ingevuld."/>
                 <Label Content="Pakket opslaan in (verplicht)"/>
@@ -1166,7 +1593,7 @@ trap
                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
                   <Label Content="AppId (interne naam, geen spaties)"/>
-                  <TextBox Name="TxtAppId" IsReadOnly="True" Background="#F7F7F7"/>
+                  <TextBox Name="TxtAppId" IsReadOnly="True" Background="#F7F8FA"/>
                   <Label Content="Naam in de popup"/>
                   <TextBox Name="TxtAppName"/>
                   <Label Content="Versie"/>
@@ -1271,7 +1698,7 @@ trap
                 <DataGrid Name="DgComponents" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           CanUserSortColumns="False" CanUserReorderColumns="False" HeadersVisibility="Column" SelectionMode="Single"
                           GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E1E4E8" Height="170" Margin="0,0,0,8"
-                          Background="White" BorderBrush="#C8CCD2" RowHeight="26">
+                          Background="White" BorderBrush="#D5DAE1" RowHeight="30">
                   <DataGrid.Columns>
                     <DataGridCheckBoxColumn Header="Hoofd" Width="50" Binding="{Binding Main, UpdateSourceTrigger=PropertyChanged}"/>
                     <DataGridTextColumn Header="Bestand" Width="2*" IsReadOnly="True" Binding="{Binding File}"/>
@@ -1563,16 +1990,26 @@ trap
       </TabItem>
 
       <TabItem Name="TabLog" Header="Resultaat">
-        <TextBox Name="TxtLog" Margin="12" IsReadOnly="True" FontFamily="Consolas" FontSize="12" Background="#1E1E1E" Foreground="#E6E6E6"
+        <TextBox Name="TxtLog" Margin="12" Padding="12,10" BorderThickness="0" IsReadOnly="True" FontFamily="Consolas" FontSize="12" Background="#1E2430" Foreground="#E6E6E6"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
       </TabItem>
     </TabControl>
   </DockPanel>
 </Window>
 '@
+[xml]$xaml = $xamlText.Replace('<!--THEMA-->', $ThemeXaml)
 
 $Window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
 if (Test-Path $BuilderIcon) { $img = Get-BuilderIconImage; if ($img) { $Window.Icon = $img } }
+# Kop: grootste formaat uit het .ico (scherp), anders blijft het symbool staan
+try
+{
+    $icoStream = New-Object System.IO.MemoryStream (, [System.IO.File]::ReadAllBytes($BuilderIcon))
+    $icoFrames = [System.Windows.Media.Imaging.BitmapDecoder]::Create($icoStream, [System.Windows.Media.Imaging.BitmapCreateOptions]::None, [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad).Frames
+    $icoBig = $icoFrames | Sort-Object { $_.PixelWidth } -Descending | Select-Object -First 1
+    if ($icoBig) { $Window.FindName('ImgHeader').Source = $icoBig; $Window.FindName('TxtHeaderGlyph').Visibility = 'Collapsed' }
+}
+catch { }
 
 function Update-BuilderShortcut
 {
@@ -1717,7 +2154,7 @@ function Update-InstallPreview
 {
     $auto = [bool]$ui.ChkAutoSteps.IsChecked
     $ui.TxtInstallCmd.IsReadOnly = $auto
-    $ui.TxtInstallCmd.Background = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($(if ($auto) { '#F7F7F7' } else { '#FFFFFF' }))
+    $ui.TxtInstallCmd.Background = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($(if ($auto) { '#F7F8FA' } else { '#FFFFFF' }))
     if ($auto)
     {
         $ui.TxtInstallCmd.Text = New-InstallCmdFromComponents $ui.TxtAppName.Text (Get-ComponentList) $ui.TxtPreInstall.Text $ui.TxtPostInstall.Text
@@ -1836,19 +2273,24 @@ function Show-StandardTextsEditor
     # Klein venster om _Kit\Standaardteksten.psd1 te bewerken (geldt voor alle apps)
     [xml]$x = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Standaardteksten voor alle apps" Width="760" Height="680" WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
-  <DockPanel Margin="14">
+        FontFamily="Segoe UI" FontSize="13" Background="#F4F6F9" Foreground="#1F2937" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+<!--THEMA-->
+  </Window.Resources>
+  <DockPanel Margin="16">
     <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,10">Deze teksten gebruikt elke app, tenzij je bij een app in tabblad 3 een eigen tekst invult. Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken. Bouw de pakketten daarna opnieuw.</TextBlock>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-      <Button Name="BtnReset" Content="Ingebouwde teksten terugzetten" Padding="12,6" Margin="0,0,8,0"/>
-      <Button Name="BtnCancel" Content="Annuleren" Padding="12,6" Margin="0,0,8,0"/>
-      <Button Name="BtnOk" Content="Opslaan" Padding="12,6" Background="#185FA5" Foreground="White" BorderBrush="#185FA5"/>
+      <Button Name="BtnReset" Content="Ingebouwde teksten terugzetten"/>
+      <Button Name="BtnCancel" Content="Annuleren"/>
+      <Button Name="BtnOk" Content="Opslaan" Style="{StaticResource Primary}" Margin="0"/>
     </StackPanel>
     <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Name="Pnl"/></ScrollViewer>
   </DockPanel>
 </Window>
 '@
+    $x = [xml]$x.OuterXml.Replace('<!--THEMA-->', $ThemeXaml)
     $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
     $w.Owner = $Window
     $w.Icon = $Window.Icon
