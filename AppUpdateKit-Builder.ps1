@@ -1864,12 +1864,12 @@ $xamlText = @'
                   </DataGrid.Columns>
                 </DataGrid>
                 <WrapPanel>
-                  <Button Name="BtnCompAdd" Content="Onderdeel toevoegen..." Margin="0,0,8,6"/>
+                  <Button Name="BtnCompAdd" Content="Toevoegen..." Margin="0,0,8,6" Style="{StaticResource Primary}"/>
                   <Button Name="BtnCompRemove" Content="Verwijderen" Margin="0,0,8,6"/>
                   <Button Name="BtnCompUp" Content="Omhoog" Margin="0,0,8,6"/>
                   <Button Name="BtnCompDown" Content="Omlaag" Margin="0,0,8,6"/>
                 </WrapPanel>
-                <TextBlock Name="TxtCompInfo" Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Ondersteund: .exe, .msi, .msp, .ps1, .cmd/.bat en .reg. Stille parameters worden voorgesteld."/>
+                <TextBlock Name="TxtCompInfo" Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Toevoegen: kies per bestand of het geïnstalleerd wordt (onderdeel), naar een map op de laptop gekopieerd wordt, of alleen meegaat. Installeren kan bij .exe, .msi, .msp, .ps1, .cmd/.bat en .reg; stille parameters worden voorgesteld."/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}">
@@ -1912,11 +1912,10 @@ $xamlText = @'
             </Border>
             <Border Style="{StaticResource Card}">
               <StackPanel>
-                <Label Content="Bestanden in het pakket"/>
-                <TextBlock Style="{StaticResource Hint}" Text="Alles in deze lijst gaat mee in het .intunewin-pakket (installers, logo, configuratie, eigen scripts)."/>
+                <Label Content="In het pakket"/>
+                <TextBlock Style="{StaticResource Hint}" Text="Overzicht van alles wat meegaat in het .intunewin-pakket, met wat de installatie ermee doet. Toevoegen doe je bovenaan bij Onderdelen."/>
                 <ListBox Name="LstFiles" Height="130" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
-                  <Button Name="BtnAddFiles" Content="Bestanden toevoegen..."/>
                   <Button Name="BtnRemoveFile" Content="Geselecteerde verwijderen"/>
                   <Button Name="BtnOpenAppFolder" Content="Map openen"/>
                 </StackPanel>
@@ -3112,28 +3111,6 @@ $ui.BtnGenerate.Add_Click({
     $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
 })
 
-$ui.BtnCompAdd.Add_Click({
-    $dlg = New-Object Microsoft.Win32.OpenFileDialog
-    $dlg.Multiselect = $true
-    Set-StartFolder $dlg
-    $dlg.Filter = 'Installatiebestanden (*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg)|*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg|Alle bestanden (*.*)|*.*'
-    if (-not $dlg.ShowDialog()) { return }
-    $notes = @()
-    foreach ($fn in $dlg.FileNames)
-    {
-        $info = Add-ComponentFile $fn $false
-        $notes += "$($info.File): $($info.Kind). $($info.Note)"
-    }
-    # Nieuwe onderdelen vóór het hoofdonderdeel zetten (meestal zijn het voorbereidingen, zoals een runtime)
-    $main = $script:Components | Where-Object { $_.Main } | Select-Object -First 1
-    if ($main)
-    {
-        $mi = $script:Components.IndexOf($main)
-        if ($mi -lt $script:Components.Count - 1) { $script:Components.Move($mi, $script:Components.Count - 1) }
-    }
-    $ui.TxtCompInfo.Text = ($notes -join '  |  ') + '  Controleer de parameters; dubbelklik om te wijzigen.'
-    Update-InstallPreview; Update-FileList
-})
 
 $ui.BtnCompRemove.Add_Click({
     $c = $ui.DgComponents.SelectedItem
@@ -3239,10 +3216,11 @@ $ui.BtnIconFromInstaller.Add_Click({
 
 $ui.TxtAccent.Add_TextChanged({ Update-AccentPreview })
 
-$ui.BtnAddFiles.Add_Click({
+$ui.BtnCompAdd.Add_Click({
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.Multiselect = $true
     Set-StartFolder $dlg
+    $dlg.Filter = 'Alle bestanden (*.*)|*.*|Installatiebestanden (*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg)|*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg'
     if (-not $dlg.ShowDialog()) { return }
     $files = @($dlg.FileNames)
     $all = $null; $added = @(); $copied = @()
@@ -3257,7 +3235,8 @@ $ui.BtnAddFiles.Add_Click({
         {
             'Onderdeel'
             {
-                [void](Add-ComponentFile $fn $false)
+                $info = Add-ComponentFile $fn $false
+                $ui.TxtCompInfo.Text = "$($info.File): $($info.Kind). $($info.Note)  Controleer de parameters; dubbelklik om te wijzigen."
                 # Nieuwe onderdelen vóór het hoofdonderdeel (meestal een voorbereiding, zoals een runtime)
                 $main = $script:Components | Where-Object { $_.Main } | Select-Object -First 1
                 if ($main) { $mi = $script:Components.IndexOf($main); if ($mi -lt $script:Components.Count - 1) { $script:Components.Move($mi, $script:Components.Count - 1) } }
