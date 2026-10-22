@@ -57,7 +57,7 @@ Kies je in tabblad 1 een `.msi`, dan vult de Builder de detectie zelf in: *Regis
 
 Bij *Minimale versie* vul je een ander nummer in als de app zich anders registreert dan de installer. Met *Geen versie* kijkt het script alleen of het bestand of de sleutel bestaat. Met **Testen op deze pc** voer je het detectiescript direct uit en zie je of het de app vindt.
 
-**Snelkoppeling met eigen icoon:** bij elke start maakt de Builder in de kit-map de snelkoppeling **AppUpdateKit Builder**, met een eigen icoon. Sleep die naar je bureaublad of taakbalk. Daarnaast komt hij in je Startmenu; daar haalt Windows ook het icoon in de taakbalk vandaan, zodat je het icoon ziet als de kit op een netwerkschijf staat.
+**Snelkoppeling met eigen icoon:** bij elke start maakt de Builder in de kit-map de snelkoppeling **AppUpdateKit Builder**, met een eigen icoon. Sleep die naar je bureaublad of taakbalk. Daarnaast komt hij in je Startmenu; daar haalt Windows ook het icoon in de taakbalk vandaan. Staat de kit op een netwerkschijf, dan gebruiken beide snelkoppelingen een lokale kopie van het icoon (`%ProgramData%\AppUpdateKit\Builder.ico`), omdat Verkenner een icoon op een netwerkschijf vaak niet toont. Zie je toch geen icoon? In `%LOCALAPPDATA%\AppUpdateKit\opstarten.log` staat wat de Builder bij het starten met het icoon deed.
 
 **In Intune na een fix van dezelfde versie:** open de bestaande app → *Properties* → *App information* → *Edit* → *Select file to update* en kies de nieuwe `install.intunewin`. Een **nieuwe versie** voeg je toe als nieuwe Win32-app, met supersedence op de vorige.
 
