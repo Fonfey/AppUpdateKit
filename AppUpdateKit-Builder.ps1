@@ -1006,7 +1006,6 @@ try
 }
 catch { $script:AumidError = $_.Exception.Message }
 $BuilderIcon = Join-Path $KitDir 'Builder.ico'
-$BuilderIconKit = $BuilderIcon   # voor de snelkoppeling in de kit-map (ook voor andere gebruikers)
 # Vanaf een netwerkschijf (bijv. I:\apps) laadt Windows het icoon niet altijd: lokale kopie in het eigen profiel gebruiken
 # Wat er met het icoon gebeurt, komt in %LOCALAPPDATA%\AppUpdateKit\opstarten.log (bij elke start overschreven)
 $script:StartLog = Join-Path (Join-Path $env:LOCALAPPDATA 'AppUpdateKit') 'opstarten.log'
@@ -1029,6 +1028,21 @@ try
     }
     if (Test-Path -LiteralPath $localIcon) { $BuilderIcon = $localIcon; Write-StartLog "Icoon gebruikt : $localIcon ($((Get-Item -LiteralPath $localIcon).Length) bytes)" }
     else { Write-StartLog 'Icoon gebruikt : GEEN lokale kopie, het icoon uit de kit wordt gebruikt' }
+    # Kopie voor de snelkoppeling in de kit-map: Verkenner toont een icoon dat zelf op een netwerkschijf staat vaak niet.
+    # %ProgramData% is op elke pc lokaal en voor elk account leesbaar.
+    $script:SharedIcon = $null
+    try
+    {
+        $sharedDir = Join-Path $env:ProgramData 'AppUpdateKit'
+        if (-not (Test-Path -LiteralPath $sharedDir)) { New-Item -Path $sharedDir -ItemType Directory -Force | Out-Null }
+        $sharedIcon = Join-Path $sharedDir 'Builder.ico'
+        if (-not (Test-Path -LiteralPath $sharedIcon) -or (Get-Item -LiteralPath $sharedIcon).Length -ne (Get-Item -LiteralPath $BuilderIcon).Length)
+        {
+            Copy-Item -LiteralPath $BuilderIcon -Destination $sharedIcon -Force
+        }
+        if (Test-Path -LiteralPath $sharedIcon) { $script:SharedIcon = '%ProgramData%\AppUpdateKit\Builder.ico' }
+    }
+    catch { Write-StartLog "Gedeeld icoon  : niet gelukt ($($_.Exception.Message))" }
     if ($script:AumidError) { Write-StartLog "FOUT bij de taakbalk-identiteit: $($script:AumidError)" }
     else { Write-StartLog 'Taakbalk-id    : AppUpdateKit.Builder' }
 }
@@ -2128,19 +2142,31 @@ catch { }
 
 function Update-BuilderShortcut
 {
-    # Snelkoppeling "AppUpdateKit Builder" met het Builder-icoon in de kit-map (bij elke start bijgewerkt)
+    # Snelkoppeling "AppUpdateKit Builder" in de kit-map (bij elke start bijgewerkt).
+    # Het icoon wijst naar een lokale kopie (%ProgramData% of %LOCALAPPDATA%): Verkenner laat een icoon op een
+    # netwerkschijf in een snelkoppeling vaak leeg. De variabele wordt op elke pc en voor elk account zelf ingevuld.
+    $lnk    = Join-Path $KitRoot 'AppUpdateKit Builder.lnk'
+    $target = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $lnkArgs = "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`""
+    $icon   = if ($script:SharedIcon) { $script:SharedIcon } else { '%LOCALAPPDATA%\AppUpdateKit\Builder.ico' }
     try
     {
-        $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $KitRoot 'AppUpdateKit Builder.lnk'))
-        $s.TargetPath       = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $s.Arguments        = "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`""
-        $s.WorkingDirectory = $KitRoot
-        $s.IconLocation     = "$BuilderIconKit,0"
-        $s.WindowStyle      = 7
-        $s.Description      = 'AppUpdateKit Builder'
-        $s.Save()
+        if (-not ('AppKit.AumidShortcut' -as [type])) { throw 'hulpcode niet geladen' }
+        [AppKit.AumidShortcut]::Save($lnk, $target, $lnkArgs, $KitRoot, $icon, 'AppUpdateKit.Builder', 'AppUpdateKit Builder')
+        Write-StartLog "Snelkoppeling  : $lnk (icoon $icon)"
     }
-    catch { }
+    catch
+    {
+        try
+        {
+            $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+            $s.TargetPath = $target; $s.Arguments = $lnkArgs; $s.WorkingDirectory = $KitRoot
+            $s.IconLocation = "$BuilderIcon,0"; $s.WindowStyle = 7; $s.Description = 'AppUpdateKit Builder'
+            $s.Save()
+            Write-StartLog "Snelkoppeling  : $lnk (reserve, icoon $BuilderIcon)"
+        }
+        catch { Write-StartLog "FOUT bij de snelkoppeling in de kit-map: $($_.Exception.Message)" }
+    }
 }
 $ui = @{}
 $xaml.SelectNodes('//*[@Name]') | ForEach-Object { $ui[$_.Name] = $Window.FindName($_.Name) }
