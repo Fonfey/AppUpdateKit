@@ -1004,22 +1004,35 @@ try
     Add-Type -Namespace AppKit -Name Shell -MemberDefinition '[DllImport("shell32.dll")] public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string id);'
     [void][AppKit.Shell]::SetCurrentProcessExplicitAppUserModelID('AppUpdateKit.Builder')
 }
-catch { }
+catch { $script:AumidError = $_.Exception.Message }
 $BuilderIcon = Join-Path $KitDir 'Builder.ico'
 $BuilderIconKit = $BuilderIcon   # voor de snelkoppeling in de kit-map (ook voor andere gebruikers)
 # Vanaf een netwerkschijf (bijv. I:\apps) laadt Windows het icoon niet altijd: lokale kopie in het eigen profiel gebruiken
+# Wat er met het icoon gebeurt, komt in %LOCALAPPDATA%\AppUpdateKit\opstarten.log (bij elke start overschreven)
+$script:StartLog = Join-Path (Join-Path $env:LOCALAPPDATA 'AppUpdateKit') 'opstarten.log'
+function Write-StartLog([string]$Text)
+{
+    try { Add-Content -LiteralPath $script:StartLog -Value "$(Get-Date -Format 'HH:mm:ss')  $Text" -Encoding UTF8 } catch { }
+}
 try
 {
     $localIconDir = Join-Path $env:LOCALAPPDATA 'AppUpdateKit'
-    if (-not (Test-Path $localIconDir)) { New-Item -Path $localIconDir -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $localIconDir)) { New-Item -Path $localIconDir -ItemType Directory -Force | Out-Null }
+    Set-Content -LiteralPath $script:StartLog -Value "AppUpdateKit Builder gestart $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -Encoding UTF8 -ErrorAction SilentlyContinue
+    Write-StartLog "Kit-map        : $KitRoot"
+    Write-StartLog "Icoon in kit   : $BuilderIcon (bestaat: $(Test-Path -LiteralPath $BuilderIcon))"
     $localIcon = Join-Path $localIconDir 'Builder.ico'
-    if ((Test-Path $BuilderIcon) -and (-not (Test-Path $localIcon) -or (Get-Item $localIcon).Length -ne (Get-Item $BuilderIcon).Length))
+    if ((Test-Path -LiteralPath $BuilderIcon) -and (-not (Test-Path -LiteralPath $localIcon) -or (Get-Item -LiteralPath $localIcon).Length -ne (Get-Item -LiteralPath $BuilderIcon).Length))
     {
         Copy-Item -LiteralPath $BuilderIcon -Destination $localIcon -Force
+        Write-StartLog "Lokale kopie   : gemaakt in $localIcon"
     }
-    if (Test-Path $localIcon) { $BuilderIcon = $localIcon }
+    if (Test-Path -LiteralPath $localIcon) { $BuilderIcon = $localIcon; Write-StartLog "Icoon gebruikt : $localIcon ($((Get-Item -LiteralPath $localIcon).Length) bytes)" }
+    else { Write-StartLog 'Icoon gebruikt : GEEN lokale kopie, het icoon uit de kit wordt gebruikt' }
+    if ($script:AumidError) { Write-StartLog "FOUT bij de taakbalk-identiteit: $($script:AumidError)" }
+    else { Write-StartLog 'Taakbalk-id    : AppUpdateKit.Builder' }
 }
-catch { }
+catch { Write-StartLog "FOUT bij het kopiëren van het icoon: $($_.Exception.Message)" }
 
 # Startmenu-snelkoppeling met dezelfde taakbalk-identiteit (AppUserModelID) en het icoon.
 # Windows haalt het taakbalkicoon van een app met een eigen identiteit uit zo'n snelkoppeling; zonder snelkoppeling
@@ -1110,9 +1123,11 @@ try
             (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'),
             "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`"",
             $KitRoot, $BuilderIcon, 'AppUpdateKit.Builder', 'AppUpdateKit Builder')
+        Write-StartLog "Startmenu      : $startMenu bijgewerkt"
     }
+    else { Write-StartLog 'Startmenu      : niet gemaakt (hulpcode kon niet laden)' }
 }
-catch { }
+catch { Write-StartLog "FOUT bij de Startmenu-snelkoppeling: $($_.Exception.Message)" }
 
 function Get-BuilderIconImage
 {
@@ -2099,7 +2114,8 @@ $xamlText = @'
 [xml]$xaml = $xamlText.Replace('<!--THEMA-->', $ThemeXaml)
 
 $Window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
-if (Test-Path $BuilderIcon) { $img = Get-BuilderIconImage; if ($img) { $Window.Icon = $img } }
+if (Test-Path -LiteralPath $BuilderIcon) { $img = Get-BuilderIconImage; if ($img) { $Window.Icon = $img; Write-StartLog "Venstericoon   : ingesteld ($($img.PixelWidth)x$($img.PixelHeight))" } else { Write-StartLog 'Venstericoon   : FOUT, icoon kon niet worden gelezen' } }
+else { Write-StartLog "Venstericoon   : FOUT, $BuilderIcon niet gevonden" }
 # Kop: grootste formaat uit het .ico (scherp), anders blijft het symbool staan
 try
 {
