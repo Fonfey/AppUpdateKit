@@ -41,7 +41,7 @@ Dubbelklik daarna op **`Start-Builder.cmd`**. Na de eerste keer kun je ook de sn
      - **zelfde versienummer** = die versie verbeteren (de vorige build gaat naar het archief);
      - **nieuwe installer of nieuw versienummer** = een nieuwe versie.
 
-**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\7-Zip\versies\24.09`. De Builder zet er `\intune-package` achter. Het kiesvenster werkt zoals Verkenner: je kunt bovenin in de adresbalk een pad typen of plakken. Je kunt het pad ook direct in het tekstvak typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
+**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\7-Zip\versies\24.09`. De Builder zet er `\intune-package` achter. Het kiesvenster werkt zoals Verkenner: je kunt bovenin in de adresbalk een pad typen of plakken. Je kunt het pad ook direct in het tekstvak typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. De map mag niet in `Apps\` van de kit liggen (dan zou elke build zichzelf in het pakket kopiëren); de Builder weigert zo'n map. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
 
 In `_Kit\Instellingen.psd1` staan twee instellingen voor de hele kit:
 - `InstallerMap`: de map waar *Kiezen...* standaard opent. Je stelt hem in bij de eerste keer opstarten, of later met de knop *Standaardmap...* links in de Builder. Hij komt dan in dit bestand, bijvoorbeeld `I:\Software\projecten\`.

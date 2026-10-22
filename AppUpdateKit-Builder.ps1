@@ -911,6 +911,18 @@ function Compare-AppData
     return $diff
 }
 
+function Test-InAppsFolder([string]$Path)
+{
+    # Ligt dit pad in Apps\ van de kit (de app-mappen)? Daar mag het pakket niet komen.
+    try
+    {
+        $c = [System.IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($Path)).TrimEnd('\')
+        $a = [System.IO.Path]::GetFullPath($AppsRoot).TrimEnd('\')
+        return ($c -eq $a -or $c.StartsWith($a + '\', [System.StringComparison]::OrdinalIgnoreCase))
+    }
+    catch { return $false }
+}
+
 function Test-AppData
 {
     param ([hashtable]$d)
@@ -935,6 +947,7 @@ function Test-AppData
     {
         $of = [Environment]::ExpandEnvironmentVariables("$($d.OutputFolder)")
         if ($of -notmatch '^([A-Za-z]:\\|\\\\)') { $e += "Pakket opslaan in: gebruik een volledig pad, bijv. I:\...\intune-package (nu: $($d.OutputFolder))." }
+        elseif (Test-InAppsFolder $of) { $e += "Pakket opslaan in ligt in de app-map ($of). Kies een map buiten Apps\, bijv. de versiemap naast de installer; anders kopieert elke build zichzelf in het pakket." }
     }
     if ($d.AutoInstallSteps -and -not @($d.Components | Where-Object { $_ }).Count) { $e += 'Voeg in tabblad 2 minstens één onderdeel toe (of zet automatisch maken uit).' }
     if ($d.InstallWindow -and $d.InstallWindow -ne 'Altijd')
@@ -2982,6 +2995,12 @@ function Confirm-OutputFolder
         return $false
     }
     $path = [Environment]::ExpandEnvironmentVariables($o).TrimEnd('\')
+    if (Test-InAppsFolder $path)
+    {
+        Show-Error "Pakket opslaan in ligt in de app-map:`n`n$path`n`nKies in tabblad 1 een map buiten Apps\, bijv. de versiemap naast de installer."
+        $ui.Tabs.SelectedIndex = 0
+        return $false
+    }
     if (Test-Path -LiteralPath $path -PathType Container) { return $true }
     # Schijf of netwerkshare bereikbaar? (I:\ of \\server\share)
     $root = if ($path -match '^(\\\\[^\\]+\\[^\\]+)') { $Matches[1] } else { [System.IO.Path]::GetPathRoot($path) }
@@ -3392,6 +3411,11 @@ $ui.BtnOutputFolder.Add_Click({
     {
         # Gekozen versiemap -> <versiemap>\intune-package (PakketSubmap in _Kit\Instellingen.psd1)
         $chosen = $picked.TrimEnd('\')
+        if (Test-InAppsFolder $chosen)
+        {
+            Show-Error "Deze map ligt in de app-map van de kit ($chosen).`n`nHet pakket mag daar niet komen: dan kopieert elke build zichzelf in het pakket. Kies de versiemap naast de installer, bijv. ...\versies\2.4.0."
+            return
+        }
         $sub = $KitSettings.PakketSubmap
         $ui.TxtOutputFolder.Text = if ($sub -and (Split-Path $chosen -Leaf) -ine $sub) { Join-Path $chosen $sub } else { $chosen }
         Set-Status "Pakket komt in: $($ui.TxtOutputFolder.Text)"

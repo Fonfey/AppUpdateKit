@@ -105,6 +105,16 @@ if ($external) {
         $external = ''
     }
 }
+function Test-IsInside([string]$Child, [string]$Parent) {
+    # Ligt $Child in (of is het) $Parent? Volledige paden, hoofdletters maken niet uit.
+    $c = [System.IO.Path]::GetFullPath($Child).TrimEnd('\', '/')
+    $p = [System.IO.Path]::GetFullPath($Parent).TrimEnd('\', '/')
+    return ($c -eq $p -or $c.StartsWith($p + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))
+}
+if ($external -and (Test-IsInside $external (Join-Path $KitRoot 'Apps'))) {
+    # Het pakket mag niet in de app-map (of in Apps\) komen: dan kopieert elke build zichzelf in het pakket
+    throw "Pakket opslaan in ligt in de app-map: $external`nKies een map buiten Apps\, bijvoorbeeld de versiemap naast de installer (...\versies\<versie>). Pas OutputFolder aan in tabblad 1 of in app.psd1."
+}
 $root     = if ($external) { $external } else { $kitVersionDir }
 $pointer  = Join-Path $kitVersionDir 'Pakketlocatie.txt'
 # Stond hier alleen een verwijzing naar een eigen map, en bouwen we nu in de kit? Verwijzing weghalen.
@@ -215,8 +225,13 @@ function Fill($Text) {
 
 # ---------- Pakket ----------
 # 1. Alles uit de app-map (installers, logo, eigen scripts, extra bestanden)
-Get-ChildItem -Path $source -Force | Where-Object { $_.Extension -ne '.intunewin' } |
-    Copy-Item -Destination $pkg -Recurse -Force
+#    Een map die zelf een gebouwd pakket is (bijv. een oude intune-package in de app-map) gaat niet mee
+$sourceItems = @(Get-ChildItem -Path $source -Force | Where-Object { $_.Extension -ne '.intunewin' } | Where-Object {
+    $isBuild = $_.PSIsContainer -and ((Test-Path (Join-Path $_.FullName 'Bouwinfo.txt')) -or (Test-Path (Join-Path $_.FullName 'Pakket')) -or $_.Name -eq 'intune-package')
+    if ($isBuild) { Write-Warning "De map $($_.Name) in de app-map lijkt een gebouwd pakket en gaat niet mee in het pakket. Haal hem weg uit $source." }
+    -not $isBuild
+})
+$sourceItems | Copy-Item -Destination $pkg -Recurse -Force
 
 # 2. app.psd1 en de eigen cmd-bestanden met de juiste codering
 Write-Text (Join-Path $pkg 'app.psd1') (Read-Text (Join-Path $source 'app.psd1'))
@@ -356,8 +371,7 @@ foreach ($f in 'Install.ps1', 'Uninstall.ps1') {
 }
 
 # ---------- Bron: volledige kopie van deze versie (instellingen, installers, alle bestanden) ----------
-Get-ChildItem -Path $source -Force | Where-Object { $_.Extension -ne '.intunewin' } |
-    Copy-Item -Destination $bron -Recurse -Force
+$sourceItems | Copy-Item -Destination $bron -Recurse -Force
 # Standaardteksten zoals ze bij deze build waren (voor de geschiedenis)
 if (Test-Path (Join-Path $kit 'Standaardteksten.psd1')) { Copy-Item (Join-Path $kit 'Standaardteksten.psd1') $bron -Force }
 
