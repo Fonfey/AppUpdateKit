@@ -1,4 +1,4 @@
-# Windows scripts keep CRLF line endings (cmd.exe needs them)
+# Windows-scripts houden CRLF-regeleinden (cmd.exe heeft dat nodig)
 *.cmd   text eol=crlf
 *.bat   text eol=crlf
 *.ps1   text eol=crlf

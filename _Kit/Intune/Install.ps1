@@ -1,200 +1,199 @@
 ﻿<#
 .SYNOPSIS
-    {{T:Intune-installatiescript voor|Intune install script for}} {{APPNAME}} {{VERSION}}  (AppUpdateKit)
+    Intune-installatiescript voor {{APPNAME}} {{VERSION}}  (AppUpdateKit)
 
 .DESCRIPTION
-    {{T:Upload dit script in Intune bij de Win32-app:|Upload this script in Intune with the Win32 app:}}
+    Upload dit script in Intune bij de Win32-app:
       Program > Installer type: PowerShell script > Install script
-    {{T:Het hoort NIET in het .intunewin-pakket. Daardoor kun je het later in Intune aanpassen|It does NOT belong in the .intunewin package. That way you can change it later in Intune}}
-    {{T:(teksten, uitstellen, tijden, parameters, extra stappen) zonder opnieuw te verpakken.|(texts, postponing, times, parameters, extra steps) without repackaging.}}
+    Het hoort NIET in het .intunewin-pakket. Daardoor kun je het later in Intune aanpassen
+    (teksten, uitstellen, tijden, parameters, extra stappen) zonder opnieuw te verpakken.
 
-    {{T:Opnieuw verpakken is alleen nodig bij een nieuwe installer, een ander logo of een nieuwe kit-versie.|Repackaging is only needed for a new installer, another logo or a new kit version.}}
-    {{T:Neem een wijziging die je hier in Intune doet ook over in de Builder, anders is hij bij de volgende build weg.|Copy any change you make here in Intune into the Builder too, otherwise it is gone after the next build.}}
+    Opnieuw verpakken is alleen nodig bij een nieuwe installer, een ander logo of een nieuwe kit-versie.
+    Neem een wijziging die je hier in Intune doet ook over in de Builder, anders is hij bij de volgende build weg.
 
-    {{T:Gemaakt door de AppUpdateKit Builder op|Created by the AppUpdateKit Builder on}} {{BUILDDATE}}.
+    Gemaakt door de AppUpdateKit Builder op {{BUILDDATE}}.
 #>
 
 # =============================================================================
-#  1. {{T:SCHAKELAARS  ($true = aan)|SWITCHES  ($true = on)}}
+#  1. SCHAKELAARS  ($true = aan)
 # =============================================================================
-# {{T:Niet controleren of de app open staat (gebruik dan ook Requirement-NoProcessCheck.ps1)|Do not check whether the app is running (then also use Requirement-NoProcessCheck.ps1)}}
-$NoProcessCheck = $false
-# {{T:Geen popup, direct installeren (meldingen rechtsonder blijven)|No popup, install right away (notifications remain)}}
-$NoPopup        = $false
-# {{T:Geen popup en geen meldingen|No popup and no notifications}}
-$Silent         = $false
+$GeenProcescheck = $false   # niet controleren of de app open staat
+                            #   gebruik dan ook Requirement-zonder-procescheck.ps1 in Intune
+$GeenPopup       = $false   # geen popup, direct installeren (meldingen rechtsonder blijven)
+$Stil            = $false   # geen popup en geen meldingen
 
-# {{T:Eigen schakelaars voor de stappen hieronder (in de cmd-regels beschikbaar als APP_<NAAM>)|Own switches for the steps below (available in the cmd lines as APP_<NAME>)}}
-$Switches = @{
+# Eigen schakelaars voor de stappen hieronder (in de cmd-regels beschikbaar als APP_<NAAM>)
+$Schakelaars = @{
 {{SCHAKELAARS}}
 }
 
 # =============================================================================
-#  2. {{T:INSTELLINGEN EN TEKSTEN  (zelfde betekenis als in app.psd1)|SETTINGS AND TEXTS  (same meaning as in app.psd1)}}
-#     {{T:Texts = Nederlands, TextsEn = Engels (voor gebruikers met Engelse Windows). Leeg ('') = standaardtekst.|Texts = Dutch, TextsEn = English (for users with English Windows). Empty ('') = standard text.}}
+#  2. INSTELLINGEN EN TEKSTEN  (zelfde betekenis als in app.psd1)
+#     In teksten: {AppName}, {Versie}, {Minuten}, {MaxUitstel}. Leeg ('') = standaardtekst.
 # =============================================================================
 $App = @{
 {{INSTELLINGEN}}
 }
 
 # =============================================================================
-#  3. {{T:INSTALLATIESTAPPEN|INSTALLATION STEPS}}
-#     {{T:Onderdelen worden in volgorde uitgevoerd vanuit de pakketmap.|Components run in order from the package folder.}}
-#     {{T:Command = de opdrachtregel (met parameters); SuccessCodes = exitcodes die als gelukt tellen.|Command = the command line (with parameters); SuccessCodes = exit codes that count as success.}}
+#  3. INSTALLATIESTAPPEN
+#     Onderdelen worden in volgorde uitgevoerd vanuit de pakketmap.
+#     Opdracht = de opdrachtregel (met parameters); Geslaagd = exitcodes die als gelukt tellen.
 # =============================================================================
-$Components = @(
+$Onderdelen = @(
 {{ONDERDELEN}}
 )
 
-# {{T:cmd-regels voor en na de onderdelen (mogen leeg blijven)|cmd lines before and after the components (may stay empty)}}
-$PreInstall = @'
+# cmd-regels voor en na de onderdelen (mogen leeg blijven)
+$VoorInstallatie = @'
 {{VOOR}}
 '@
 
-$PostInstall = @'
+$NaInstallatie = @'
 {{NA}}
 '@
 
-# {{T:Eigen installatiescript (alleen gebruikt als er hierboven geen onderdelen staan)|Own installation script (only used when there are no components above)}}
-$CustomScript = @'
+# Eigen installatiescript (alleen gebruikt als er hierboven geen onderdelen staan)
+$EigenScript = @'
 {{EIGEN_SCRIPT}}
 '@
 
 
 # =============================================================================
-#  {{T:VANAF HIER NIET AANPASSEN|DO NOT EDIT BELOW THIS LINE}}
+#  VANAF HIER NIET AANPASSEN
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 
-# Package folder: Intune starts this script from the extracted content of the .intunewin package
-$PackageDir = (Get-Location).Path
-foreach ($candidate in @($PackageDir, $PSScriptRoot)) {
-    if ($candidate -and (Test-Path (Join-Path $candidate 'AppUI-Launcher.ps1'))) { $PackageDir = $candidate; break }
+# Pakketmap: Intune start dit script vanuit de uitgepakte inhoud van het .intunewin-pakket
+$Pakket = (Get-Location).Path
+foreach ($kandidaat in @($Pakket, $PSScriptRoot)) {
+    if ($kandidaat -and (Test-Path (Join-Path $kandidaat 'AppUI-Launcher.ps1'))) { $Pakket = $kandidaat; break }
 }
-$AppDir = Join-Path 'C:\ProgramData\AppUpdates' $App.AppId
-if (-not (Test-Path $AppDir)) { New-Item -Path $AppDir -ItemType Directory -Force | Out-Null }
-$LogFile = Join-Path $AppDir 'update.log'
+$AppMap = Join-Path 'C:\ProgramData\AppUpdates' $App.AppId
+if (-not (Test-Path $AppMap)) { New-Item -Path $AppMap -ItemType Directory -Force | Out-Null }
+$LogPad = Join-Path $AppMap 'update.log'
 
-function Write-InstallLog([string]$Text) {
-    $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - [install] $Text"
-    Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
-    Write-Host $line   # Write-Host: does not end up in the output of functions
+function Write-InstallLog([string]$Tekst) {
+    $regel = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - [install] $Tekst"
+    Add-Content -Path $LogPad -Value $regel -ErrorAction SilentlyContinue
+    Write-Host $regel   # Write-Host: komt niet in de uitvoer van functies terecht
 }
 
-if (-not (Test-Path (Join-Path $PackageDir 'AppUI-Launcher.ps1'))) {
-    Write-InstallLog "{{T:FOUT: de pakketinhoud is niet gevonden|ERROR: the package content was not found}} ($PackageDir). {{T:Hoort install.intunewin van|Does install.intunewin of}} $($App.AppName) {{T:bij dit script?|belong to this script?}}"
+if (-not (Test-Path (Join-Path $Pakket 'AppUI-Launcher.ps1'))) {
+    Write-InstallLog "FOUT: de pakketinhoud is niet gevonden (map: $Pakket). Hoort install.intunewin van $($App.AppName) bij dit script?"
     exit 1
 }
-Set-Location $PackageDir
-Write-InstallLog "Start $($App.AppName) $($App.Version) ({{T:PowerShell-installer, pakket|PowerShell installer, package}}: $PackageDir)"
+Set-Location $Pakket
+Write-InstallLog "Start $($App.AppName) $($App.Version) (PowerShell-installer, pakket: $Pakket)"
 
-# Settings for the popups (they read this file instead of app.psd1)
-$configFile = Join-Path $AppDir 'app.json'
-[System.IO.File]::WriteAllText($configFile, ($App | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding $false))
-$env:APPKIT_CONFIG = $configFile
+# Instellingen klaarzetten voor de vensters (die lezen dit bestand in plaats van app.psd1)
+$configPad = Join-Path $AppMap 'app.json'
+[System.IO.File]::WriteAllText($configPad, ($App | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding $false))
+$env:APPKIT_CONFIG = $configPad
 
-# Pass the switches to the cmd lines
-foreach ($name in @($Switches.Keys)) {
-    if ($Switches[$name]) { Set-Item -Path "env:APP_$($name.ToUpper())" -Value '1' }
+# Schakelaars doorgeven aan de cmd-regels
+foreach ($naam in @($Schakelaars.Keys)) {
+    if ($Schakelaars[$naam]) { Set-Item -Path "env:APP_$($naam.ToUpper())" -Value '1' }
 }
+# Nieuwe installatie of update? (bepaalt de teksten in de vensters)
+$ps0 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+& $ps0 -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Pakket 'Test-AppInstalled.ps1') | Out-Null
+$env:APPKIT_NEWINSTALL = if ($LASTEXITCODE -ne 0) { '1' } else { '0' }
+
+$aan = @(@{ GeenProcescheck = $GeenProcescheck; GeenPopup = $GeenPopup; Stil = $Stil }.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object { $_.Key }) +
+       @($Schakelaars.Keys | Where-Object { $Schakelaars[$_] })
+if ($aan) { Write-InstallLog "Schakelaars aan: $($aan -join ', ')" }
 
 $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-function Invoke-KitScript([string]$Name, [string[]]$Arguments = @()) {
-    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PackageDir $Name) @Arguments | Out-Null
+function Invoke-KitScript([string]$Naam, [string[]]$Argumenten = @()) {
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Pakket $Naam) @Argumenten | Out-Null
     return $LASTEXITCODE
 }
 
-# New installation or update? (decides the texts in the popups)
-$env:APPKIT_NEWINSTALL = if ((Invoke-KitScript 'Test-AppInstalled.ps1') -ne 0) { '1' } else { '0' }
-
-$on = @(@{ NoProcessCheck = $NoProcessCheck; NoPopup = $NoPopup; Silent = $Silent }.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object { $_.Key }) +
-      @($Switches.Keys | Where-Object { $Switches[$_] })
-if ($on) { Write-InstallLog "{{T:Schakelaars aan|Switches on}}: $($on -join ', ')" }
-
-function Invoke-CmdBlock([string]$Text, [string]$Name) {
-    # Run cmd lines in the package folder; returns the exit code
-    $stepDir = Join-Path $AppDir 'Stappen'
-    if (-not (Test-Path $stepDir)) { New-Item -Path $stepDir -ItemType Directory -Force | Out-Null }
-    $file = Join-Path $stepDir "$Name.cmd"
-    $content = "@echo off`r`ncd /d `"$PackageDir`"`r`n" + ($Text -replace "`r?`n", "`r`n") + "`r`nexit /b %ERRORLEVEL%`r`n"
-    [System.IO.File]::WriteAllText($file, $content, [System.Text.Encoding]::Default)
-    & $env:ComSpec /c $file | ForEach-Object { Add-Content -Path $LogFile -Value "    $_" -ErrorAction SilentlyContinue }
+function Invoke-CmdBlok([string]$Tekst, [string]$Naam) {
+    # cmd-regels uitvoeren in de pakketmap; geeft de exitcode terug
+    $stapMap = Join-Path $AppMap 'Stappen'
+    if (-not (Test-Path $stapMap)) { New-Item -Path $stapMap -ItemType Directory -Force | Out-Null }
+    $bestand = Join-Path $stapMap "$Naam.cmd"
+    $inhoud = "@echo off`r`ncd /d `"$Pakket`"`r`n" + ($Tekst -replace "`r?`n", "`r`n") + "`r`nexit /b %ERRORLEVEL%`r`n"
+    [System.IO.File]::WriteAllText($bestand, $inhoud, [System.Text.Encoding]::Default)
+    & $env:ComSpec /c $bestand | ForEach-Object { Add-Content -Path $LogPad -Value "    $_" -ErrorAction SilentlyContinue }
     $rc = $LASTEXITCODE
-    Remove-Item -Path $file -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $bestand -Force -ErrorAction SilentlyContinue
     return $rc
 }
 
-function Invoke-Installation {
-    $result = 0
-    if ($PreInstall.Trim()) {
-        $rc = Invoke-CmdBlock $PreInstall 'pre'
-        Write-InstallLog "{{T:Stappen voor de installatie klaar|Pre-installation steps done}} (exitcode $rc)"
+function Invoke-Installatie {
+    $resultaat = 0
+    if ($VoorInstallatie.Trim()) {
+        $rc = Invoke-CmdBlok $VoorInstallatie 'voor'
+        Write-InstallLog "Stappen voor de installatie klaar (exitcode $rc)"
     }
 
-    $list = @($Components | Where-Object { $_ })
-    if (-not $list.Count -and $CustomScript.Trim()) {
-        Write-InstallLog '{{T:Eigen installatiescript wordt uitgevoerd|Running own installation script}}'
-        return (Invoke-CmdBlock ("set APP_EXITCODE=0`r`n" + $CustomScript) 'custom-script')
+    $lijst = @($Onderdelen | Where-Object { $_ })
+    if (-not $lijst.Count -and $EigenScript.Trim()) {
+        Write-InstallLog 'Eigen installatiescript wordt uitgevoerd'
+        return (Invoke-CmdBlok ("set APP_EXITCODE=0`r`n" + $EigenScript) 'eigen-script')
     }
 
     $n = 0
-    foreach ($c in $list) {
+    foreach ($o in $lijst) {
         $n++
-        Write-InstallLog "{{T:Onderdeel|Component}} $n ($($c.Name)): $($c.Command)"
-        $rc = Invoke-CmdBlock $c.Command "component$n"
-        $ok = @($c.SuccessCodes | ForEach-Object { [int]$_ })
-        if (-not $ok.Count) { $ok = 0, 3010, 1641 }
-        if ($ok -notcontains $rc) {
-            Write-InstallLog "{{T:Onderdeel|Component}} $n ($($c.Name)) {{T:is mislukt met exitcode|failed with exit code}} $rc"
+        Write-InstallLog "Onderdeel $n ($($o.Naam)): $($o.Opdracht)"
+        $rc = Invoke-CmdBlok $o.Opdracht "onderdeel$n"
+        $geslaagd = @($o.Geslaagd | ForEach-Object { [int]$_ })
+        if (-not $geslaagd.Count) { $geslaagd = 0, 3010, 1641 }
+        if ($geslaagd -notcontains $rc) {
+            Write-InstallLog "Onderdeel $n ($($o.Naam)) is mislukt met exitcode $rc"
             return $rc
         }
-        Write-InstallLog "{{T:Onderdeel|Component}} $n ($($c.Name)) {{T:gelukt|succeeded}} (exitcode $rc)"
-        if ($rc -eq 3010 -or $rc -eq 1641) { $result = $rc }
+        Write-InstallLog "Onderdeel $n ($($o.Naam)) gelukt (exitcode $rc)"
+        if ($rc -eq 3010 -or $rc -eq 1641) { $resultaat = $rc }
     }
 
-    if ($PostInstall.Trim()) {
-        $rc = Invoke-CmdBlock $PostInstall 'post'
-        Write-InstallLog "{{T:Stappen na de installatie klaar|Post-installation steps done}} (exitcode $rc)"
+    if ($NaInstallatie.Trim()) {
+        $rc = Invoke-CmdBlok $NaInstallatie 'na'
+        Write-InstallLog "Stappen na de installatie klaar (exitcode $rc)"
     }
-    return $result
+    return $resultaat
 }
 
 try {
-    if ($Silent) { $NoPopup = $true }
+    if ($Stil) { $GeenPopup = $true }
 
-    # 1. App must not be running (Intune retries later)
-    if (-not $NoProcessCheck -and (Invoke-KitScript 'Test-AppRunning.ps1') -ne 0) { exit 1618 }
+    # 1. App mag niet open staan (Intune probeert het later opnieuw)
+    if (-not $GeenProcescheck -and (Invoke-KitScript 'Test-AppRunning.ps1') -ne 0) { exit 1618 }
 
-    # 2. Ask for consent (Later = postpone: stop without installing)
-    if (-not $NoPopup) {
+    # 2. Toestemming vragen (Later = uitstellen: stoppen zonder installatie)
+    if (-not $GeenPopup) {
         if ((Invoke-KitScript 'Ask-InstallConsent.ps1') -ne 0) {
-            Write-InstallLog '{{T:Installatie voor nu overgeslagen (uitgesteld, buiten tijdvenster of geen reactie).|Installation skipped for now (postponed, outside the time window or no response).}}'
+            Write-InstallLog 'Installatie voor nu overgeslagen (uitgesteld, buiten tijdvenster of geen reactie).'
             exit 0
         }
-        # 3. Again: the app may have been opened while the popup or countdown was showing
-        if (-not $NoProcessCheck -and (Invoke-KitScript 'Test-AppRunning.ps1') -ne 0) { exit 1618 }
+        # 3. Nogmaals: de app kan geopend zijn terwijl het venster of de aftelklok liep
+        if (-not $GeenProcescheck -and (Invoke-KitScript 'Test-AppRunning.ps1') -ne 0) { exit 1618 }
     }
 
-    if (-not $Silent) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Installing') | Out-Null }
+    if (-not $Stil) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Installing') | Out-Null }
 
-    # 4. Installation steps
-    $exitCode = [int](Invoke-Installation)
+    # 4. Installatiestappen
+    $exitCode = [int](Invoke-Installatie)
 
-    # 5. Result (0, 3010, 1641 = success)
+    # 5. Resultaat (0, 3010, 1641 = gelukt)
     if (@(0, 3010, 1641) -contains $exitCode) {
-        Remove-Item -Path (Join-Path $AppDir 'PostponeState.json') -Force -ErrorAction SilentlyContinue
-        if (-not $Silent) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Success') | Out-Null }
-        Write-InstallLog "{{T:Installatie gelukt|Installation succeeded}} (exitcode $exitCode)"
-        # Restart prompt (RestartMode); returns 0 when the kit handles the restart
-        if (-not $Silent) { $exitCode = Invoke-KitScript 'Set-RestartPrompt.ps1' @('-ExitCode', "$exitCode") }
+        Remove-Item -Path (Join-Path $AppMap 'PostponeState.json') -Force -ErrorAction SilentlyContinue
+        if (-not $Stil) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Success') | Out-Null }
+        Write-InstallLog "Installatie gelukt (exitcode $exitCode)"
+        # Herstartmelding (RestartMode); geeft 0 terug als de kit de herstart regelt
+        if (-not $Stil) { $exitCode = Invoke-KitScript 'Set-RestartPrompt.ps1' @('-ExitCode', "$exitCode") }
     }
     else {
-        if (-not $Silent) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Error') | Out-Null }
-        Write-InstallLog "{{T:Installatie mislukt|Installation failed}} (exitcode $exitCode)"
+        if (-not $Stil) { Invoke-KitScript 'Show-Toast.ps1' @('-Type', 'Error') | Out-Null }
+        Write-InstallLog "Installatie mislukt (exitcode $exitCode)"
     }
     exit $exitCode
 }
 catch {
-    Write-InstallLog "{{T:FOUT|ERROR}}: $($_.Exception.Message)"
+    Write-InstallLog "FOUT: $($_.Exception.Message)"
     exit 1
 }

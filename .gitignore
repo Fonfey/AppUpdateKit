@@ -1,10 +1,9 @@
-# Local Builder files
-Builder-errors.log
+# Lokale bestanden van de Builder
 Builder-fouten.log
 *.lnk
 IntuneWinAppUtil.exe
-# Earlier builds (archive) and temporary package folders
-Output/*/_archive/
-Output/*/_archief/
-Output/*/*/Package/
-Diagnose-Builder.txt
+# Apps en gebouwde pakketten blijven lokaal
+Apps/*
+!Apps/.keep
+Output/*
+!Output/.keep

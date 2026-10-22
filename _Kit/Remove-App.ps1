@@ -1,18 +1,18 @@
 ﻿<#
 .SYNOPSIS
-    Removes an app by name, as listed in "Apps & features". Do NOT edit per app.
+    Verwijdert een app op naam, zoals hij in "Apps en onderdelen" staat. NIET aanpassen per app.
 
 .DESCRIPTION
-    Use in uninstall-app.cmd:
+    Gebruik in uninstall-app.cmd:
       powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "Omnissa Horizon Client"
 
-    - Searches the Uninstall registry keys (64- and 32-bit) for everything whose name starts with -Name.
-    - MSI installations: msiexec /x {productcode} /qn /norestart (also works when the setup.exe cannot).
-    - Otherwise: QuietUninstallString, or UninstallString with -ExeArgs (e.g. -ExeArgs "/S").
-    - Not found (anymore) = nothing to do = success.
+    - Zoekt in de Uninstall-registersleutels (64- en 32-bit) naar alles waarvan de naam begint met -Name.
+    - MSI-installaties: msiexec /x {productcode} /qn /norestart (werkt ook als de setup.exe dat niet kan).
+    - Anders: QuietUninstallString, of UninstallString met -ExeArgs (bijv. -ExeArgs "/S").
+    - Niet (meer) gevonden = niets te doen = gelukt.
 
 .NOTES
-    Exit 0 / 3010 / 1641 = success; otherwise the error code of the removal.
+    Exit 0 / 3010 / 1641 = gelukt; anders de foutcode van het verwijderen.
 #>
 param (
     [Parameter(Mandatory = $true)][string]$Name,
@@ -22,7 +22,6 @@ param (
 $launcher = Join-Path $PSScriptRoot 'AppUI-Launcher.ps1'
 if ((Test-Path $launcher) -and (Test-Path (Join-Path $PSScriptRoot 'app.psd1'))) { . $launcher }
 if (-not (Get-Command Write-Log -ErrorAction SilentlyContinue)) { function Write-Log([string]$Text, [string]$Tag) { Write-Host "[$Tag] $Text" } }
-if (-not (Get-Command L -ErrorAction SilentlyContinue)) { function L([string]$Nl, [string]$En) { return $En } }
 
 function Get-Entries {
     $paths = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -31,34 +30,34 @@ function Get-Entries {
 }
 
 function Invoke-Uninstall([string]$File, [string]$Arguments) {
-    Write-Log (L "Verwijderen: $File $Arguments" "Removing: $File $Arguments") 'uninstall'
+    Write-Log "Verwijderen: $File $Arguments" 'uninstall'
     $p = Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
     return $p.ExitCode
 }
 
 $entries = Get-Entries
 if (-not $entries.Count) {
-    Write-Log (L "'$Name' staat niet (meer) in Apps en onderdelen; niets te verwijderen." "'$Name' is not (or no longer) in Apps & features; nothing to remove.") 'uninstall'
+    Write-Log "'$Name' staat niet (meer) in Apps en onderdelen; niets te verwijderen." 'uninstall'
     exit 0
 }
 
 $result = 0
-# MSI first: the product code is the key name
+# MSI eerst: de productcode is de sleutelnaam
 foreach ($e in @($entries | Where-Object { $_.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$' -and ($_.WindowsInstaller -eq 1 -or "$($_.UninstallString)" -match 'msiexec') })) {
     $rc = Invoke-Uninstall 'msiexec.exe' "/x $($e.PSChildName) /qn /norestart"
     Write-Log "$($e.DisplayName) $($e.DisplayVersion): exitcode $rc" 'uninstall'
-    if ($rc -eq 1605) { $rc = 0 }                       # already gone
+    if ($rc -eq 1605) { $rc = 0 }                       # al weg
     if (@(0, 3010, 1641) -notcontains $rc) { exit $rc }
     if ($rc -ne 0) { $result = $rc }
 }
 
-# Whatever is left (not MSI): the app's own uninstaller
+# Wat er dan nog staat (geen MSI): eigen verwijderprogramma
 foreach ($e in @(Get-Entries)) {
     $cmd = if ($e.QuietUninstallString) { $e.QuietUninstallString } elseif ($e.UninstallString) { "$($e.UninstallString) $ExeArgs".Trim() } else { $null }
     if (-not $cmd) { continue }
     if ($cmd -match '^\s*"([^"]+)"\s*(.*)$') { $file = $Matches[1]; $args2 = $Matches[2] }
     elseif ($cmd -match '^\s*(\S+\.exe)\s*(.*)$') { $file = $Matches[1]; $args2 = $Matches[2] }
-    else { Write-Log (L "Onbekend verwijdercommando voor $($e.DisplayName): $cmd" "Unknown uninstall command for $($e.DisplayName): $cmd") 'uninstall'; continue }
+    else { Write-Log "Onbekend verwijdercommando voor $($e.DisplayName): $cmd" 'uninstall'; continue }
     if ($file -match 'msiexec') { $args2 = ($args2 -replace '(?i)/I\s*\{', '/X{') + ' /qn /norestart' }
     $rc = Invoke-Uninstall $file $args2
     Write-Log "$($e.DisplayName) $($e.DisplayVersion): exitcode $rc" 'uninstall'
@@ -70,9 +69,8 @@ foreach ($e in @(Get-Entries)) {
 Start-Sleep -Seconds 3
 $left = Get-Entries
 if ($left.Count -and $result -eq 0) {
-    $names = ($left | ForEach-Object { $_.DisplayName }) -join ', '
-    Write-Log (L "Let op: '$Name' staat na het verwijderen nog in Apps en onderdelen ($names)." "Note: '$Name' is still in Apps & features after removal ($names).") 'uninstall'
+    Write-Log "Let op: '$Name' staat na het verwijderen nog in Apps en onderdelen ($(($left | ForEach-Object { $_.DisplayName }) -join ', '))." 'uninstall'
     exit 1603
 }
-Write-Log (L "'$Name' is verwijderd (exitcode $result)." "'$Name' has been removed (exit code $result).") 'uninstall'
+Write-Log "'$Name' is verwijderd (exitcode $result)." 'uninstall'
 exit $result

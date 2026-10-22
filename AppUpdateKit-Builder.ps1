@@ -1,40 +1,26 @@
 ﻿<#
 .SYNOPSIS
-    AppUpdateKit Builder - form to create update packages with popups.
-    Start with Start-Builder.cmd (double-click).
+    AppUpdateKit Builder - invulscherm om update-pakketten met popup te maken.
+    Start via Start-Builder.cmd (dubbelklikken).
 
 .DESCRIPTION
-    - Pick an app or create a new one (folder Apps\<AppId>)
-    - Pick the installer: name, version, type and silent parameters are detected
-    - Logo (.svg/.ico/.png/.jpg), colour, postpone rules and texts (Dutch and English)
-    - Preview of every popup on your own screen
-    - Save and build the .intunewin package (through 2-Build-Package.ps1)
-    - Interface language Dutch / English (stored in _Kit\Settings.psd1)
+    - Apps kiezen of een nieuwe app aanmaken (map Apps\<AppId>)
+    - Installer kiezen: naam, versie, type en stille parameters worden herkend
+    - Logo (.svg/.ico/.png/.jpg), kleur, uitstelregels en teksten invullen
+    - Voorbeeld van elke popup op je eigen scherm
+    - Opslaan en het .intunewin-pakket bouwen (via 2-Bouw-pakket.ps1)
 #>
 
 $ErrorActionPreference = 'Stop'
-# Kit folder (also when $PSScriptRoot is empty, e.g. when started from PowerShell ISE)
+# Map van de kit bepalen (ook als $PSScriptRoot leeg is, bijv. bij starten vanuit PowerShell ISE)
 $KitRoot = if ($PSScriptRoot) { $PSScriptRoot }
            elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
            else { (Get-Location).Path }
 if (-not (Test-Path (Join-Path $KitRoot '_Kit'))) {
-    throw "Kan de AppUpdateKit-map niet vinden / Cannot find the AppUpdateKit folder. cd <AppUpdateKit> ; .\AppUpdateKit-Builder.ps1"
+    throw "Kan de AppUpdateKit-map niet vinden. Ga eerst naar die map (cd <pad naar AppUpdateKit>) en start het script daar, bijv. .\2-Bouw-pakket.ps1 -App NotepadPlusPlus"
 }
 $AppsRoot = Join-Path $KitRoot 'Apps'
 $KitDir   = Join-Path $KitRoot '_Kit'
-
-# ---------- Interface language (Builder, messages, generated files) ----------
-$SettingsPath = Join-Path $KitDir 'Settings.psd1'
-$script:Lang = 'nl'
-if (Test-Path $SettingsPath) { try { if ((Import-PowerShellDataFile $SettingsPath).Language -eq 'en') { $script:Lang = 'en' } } catch { } }
-if ($env:APPKIT_LANG -in 'nl', 'en') { $script:Lang = $env:APPKIT_LANG }
-function T([string]$Nl, [string]$En) { if ($script:Lang -eq 'en') { return $En } else { return $Nl } }
-
-function Save-KitLanguage([string]$Language)
-{
-    $text = "# AppUpdateKit - kit settings (the Builder updates this file)`r`n@{`r`n    Language = '$Language'   # nl | en`r`n}`r`n"
-    [System.IO.File]::WriteAllText($SettingsPath, $text, (New-Object System.Text.UTF8Encoding $true))
-}
 
 $TextKeys = @('ConsentSubHeading', 'ConsentMessage', 'ForcedSubHeading', 'ForcedMessage', 'ForcedInfo',
               'InstallingHeading', 'InstallingMessage', 'SuccessHeading', 'SuccessMessage', 'ErrorHeading', 'ErrorMessage',
@@ -42,7 +28,7 @@ $TextKeys = @('ConsentSubHeading', 'ConsentMessage', 'ForcedSubHeading', 'Forced
               'UninstallingHeading', 'UninstallingMessage', 'UninstalledHeading', 'UninstalledMessage', 'UninstallErrorHeading', 'UninstallErrorMessage',
               'NewConsentSubHeading', 'NewConsentMessage', 'NewForcedSubHeading', 'NewForcedMessage', 'NewForcedInfo', 'NewInstallingHeading', 'NewInstallingMessage', 'NewSuccessHeading', 'NewSuccessMessage', 'NewErrorHeading', 'NewErrorMessage', 'NewRestartMessage', 'NewRestartForcedMessage')
 
-# Built-in Dutch texts; overridden by _Kit\DefaultTexts.psd1 (see Get-StandardTexts)
+# Ingebouwde teksten; worden overschreven door _Kit\Standaardteksten.psd1 (zie Get-StandardTexts)
 $BuiltinTexts = [ordered]@{
     ConsentSubHeading = 'Er is een update beschikbaar'
     ConsentMessage    = 'Er staat een nieuwe versie van {AppName} voor je klaar. Tijdens de update (een paar minuten) kun je {AppName} even niet gebruiken.'
@@ -77,46 +63,33 @@ $BuiltinTexts = [ordered]@{
     NewErrorHeading         = 'Installatie niet gelukt'
     NewErrorMessage         = 'Er ging iets mis bij het installeren van {AppName}. Heb je de app nodig? Neem dan contact op met de servicedesk.'
     NewRestartMessage       = '{AppName} is geïnstalleerd. Herstart je laptop om de installatie af te ronden. Sla eerst je werk op.'
-    NewRestartForcedMessage = '{AppName} is geïnstalleerd en je laptop moet herstarten om de installatie af te ronden. Sla je werk op en sluit je programma''s af.'
+    NewRestartForcedMessage = '{AppName} is geïnstalleerd en je laptop moet herstarten om de installatie af te ronden. Sla je werk op en sluit je programmas af.'
 }
-# Built-in English texts (users with English Windows)
-$BuiltinTextsEn = [ordered]@{
-    ConsentSubHeading       = 'An update is available'
-    ConsentMessage          = 'A new version of {AppName} is ready for you. During the update (a few minutes) you cannot use {AppName}.'
-    ForcedSubHeading        = 'The update starts in {Minutes} minutes'
-    ForcedMessage           = 'You have postponed the update of {AppName} {MaxPostpones} times. In {Minutes} minutes the new version will be installed automatically. Save your work and close {AppName}.'
-    ForcedInfo              = 'Do not want to wait? Save your work, close {AppName} and click Install now.'
-    InstallingHeading       = 'Installing update'
-    InstallingMessage       = '{AppName} is being updated and is briefly unavailable. You do not need to do anything; we will let you know when it is done.'
-    SuccessHeading          = 'Update installed'
-    SuccessMessage          = 'The new version of {AppName} is ready. You can use the app again.'
-    ErrorHeading            = 'Update failed'
-    ErrorMessage            = 'Something went wrong while updating {AppName}. Is the app not working? Please contact the service desk.'
-    RestartSubHeading       = 'Restart required'
-    RestartMessage          = '{AppName} has been updated. Restart your laptop to finish the update. Save your work first.'
-    RestartForcedSubHeading = 'Your laptop will restart in {Minutes} minutes'
-    RestartForcedMessage    = '{AppName} has been updated and your laptop needs to restart to finish the update. Save your work and close your programs.'
-    UninstallingHeading     = 'Removing {AppName}'
-    UninstallingMessage     = '{AppName} is being removed from your laptop and is briefly unavailable. You do not need to do anything.'
-    UninstalledHeading      = '{AppName} has been removed'
-    UninstalledMessage      = '{AppName} is no longer on your laptop.'
-    UninstallErrorHeading   = 'Removal failed'
-    UninstallErrorMessage   = 'Something went wrong while removing {AppName}. Does this cause problems? Please contact the service desk.'
-    NewConsentSubHeading    = 'A new app is ready for you'
-    NewConsentMessage       = '{AppName} will be installed on your laptop. This takes a few minutes.'
-    NewForcedSubHeading     = 'The installation starts in {Minutes} minutes'
-    NewForcedMessage        = 'You have postponed the installation of {AppName} {MaxPostpones} times. In {Minutes} minutes {AppName} will be installed automatically. Save your work.'
-    NewForcedInfo           = 'Do not want to wait? Save your work and click Install now.'
-    NewInstallingHeading    = 'Installing {AppName}'
-    NewInstallingMessage    = '{AppName} is being installed on your laptop. You do not need to do anything; we will let you know when it is done.'
-    NewSuccessHeading       = '{AppName} has been installed'
-    NewSuccessMessage       = '{AppName} is ready. You can find the app in the Start menu.'
-    NewErrorHeading         = 'Installation failed'
-    NewErrorMessage         = 'Something went wrong while installing {AppName}. Do you need the app? Please contact the service desk.'
-    NewRestartMessage       = '{AppName} has been installed. Restart your laptop to finish the installation. Save your work first.'
-    NewRestartForcedMessage = '{AppName} has been installed and your laptop needs to restart to finish the installation. Save your work and close your programs.'
+$StandardTextsPath = Join-Path $KitDir 'Standaardteksten.psd1'
+
+# Instellingen voor deze kit: standaardmap voor installers en de submap voor het pakket (_Kit\Instellingen.psd1)
+$KitSettings = @{ InstallerMap = ''; PakketSubmap = '' }
+$kitSettingsPath = Join-Path $KitDir 'Instellingen.psd1'
+function Save-InstallerMap([string]$Folder)
+{
+    # InstallerMap in _Kit\Instellingen.psd1 aanpassen; de rest van het bestand (commentaar, PakketSubmap) blijft staan
+    $Folder = $Folder.TrimEnd('\') + '\'
+    $value = "InstallerMap = '$($Folder.Replace("'", "''"))'"
+    if (Test-Path $kitSettingsPath)
+    {
+        $text = [System.IO.File]::ReadAllText($kitSettingsPath)
+        if ($text -match "(?m)^(\s*)InstallerMap\s*=\s*'(?:[^']|'')*'") { $text = [regex]::Replace($text, "(?m)^(\s*)InstallerMap\s*=\s*'(?:[^']|'')*'", { param($m) $m.Groups[1].Value + $value }, 1) }
+        else { $text = $text -replace '@\{', "@{`r`n    $value" }
+    }
+    else
+    {
+        $text = "# AppUpdateKit - instellingen voor deze kit (geldt voor alle apps). Pas aan met Kladblok.`r`n@{`r`n    # Map waar het venster 'Kiezen...' standaard opent bij het kiezen van een installer.`r`n    $value`r`n`r`n    # Kies je bij 'Pakket opslaan in' de versiemap, dan zet de Builder deze submap erachter.`r`n    PakketSubmap = 'intune-package'`r`n}`r`n"
+    }
+    [System.IO.File]::WriteAllText($kitSettingsPath, $text, (New-Object System.Text.UTF8Encoding $true))
+    $KitSettings.InstallerMap = $Folder
 }
-$StandardTextsPath = Join-Path $KitDir 'DefaultTexts.psd1'
+
+if (Test-Path $kitSettingsPath) { try { $kitSettingsFile = Import-PowerShellDataFile $kitSettingsPath; foreach ($settingName in 'InstallerMap', 'PakketSubmap') { if ($kitSettingsFile[$settingName]) { $KitSettings[$settingName] = "$($kitSettingsFile[$settingName])" } } } catch { } }
 $TextLabels = [ordered]@{
     ConsentSubHeading = 'Venster "Update beschikbaar" - ondertitel'
     ConsentMessage    = 'Venster "Update beschikbaar" - tekst'
@@ -153,51 +126,12 @@ $TextLabels = [ordered]@{
     NewRestartMessage       = 'Nieuwe installatie - herstartmelding, tekst'
     NewRestartForcedMessage = 'Nieuwe installatie - verplichte herstart, tekst'
 }
-if ($script:Lang -eq 'en')
-{
-    $TextLabels = [ordered]@{
-        ConsentSubHeading       = '"Update available" window - subtitle'
-        ConsentMessage          = '"Update available" window - text'
-        ForcedSubHeading        = 'Warning after the last postpone - subtitle'
-        ForcedMessage           = 'Warning after the last postpone - text'
-        ForcedInfo              = 'Warning - orange line'
-        InstallingHeading       = 'Notification during installation - heading'
-        InstallingMessage       = 'Notification during installation - text'
-        SuccessHeading          = 'Success notification - heading'
-        SuccessMessage          = 'Success notification - text'
-        ErrorHeading            = 'Failure notification - heading'
-        ErrorMessage            = 'Failure notification - text'
-        RestartSubHeading       = 'Restart prompt - subtitle'
-        RestartMessage          = 'Restart prompt - text'
-        RestartForcedSubHeading = 'Mandatory restart - subtitle ({Minutes} = warning time)'
-        RestartForcedMessage    = 'Mandatory restart - text'
-        UninstallingHeading     = 'Uninstall - notification while removing, heading'
-        UninstallingMessage     = 'Uninstall - notification while removing, text'
-        UninstalledHeading      = 'Uninstall - removed notification, heading'
-        UninstalledMessage      = 'Uninstall - removed notification, text'
-        UninstallErrorHeading   = 'Uninstall - failure notification, heading'
-        UninstallErrorMessage   = 'Uninstall - failure notification, text'
-        NewConsentSubHeading    = 'New installation - window, subtitle'
-        NewConsentMessage       = 'New installation - window, text'
-        NewForcedSubHeading     = 'New installation - warning, subtitle'
-        NewForcedMessage        = 'New installation - warning, text'
-        NewForcedInfo           = 'New installation - warning, orange line'
-        NewInstallingHeading    = 'New installation - notification during installation, heading'
-        NewInstallingMessage    = 'New installation - notification during installation, text'
-        NewSuccessHeading       = 'New installation - success notification, heading'
-        NewSuccessMessage       = 'New installation - success notification, text'
-        NewErrorHeading         = 'New installation - failure notification, heading'
-        NewErrorMessage         = 'New installation - failure notification, text'
-        NewRestartMessage       = 'New installation - restart prompt, text'
-        NewRestartForcedMessage = 'New installation - mandatory restart, text'
-    }
-}
 
-#region ===================== Logic (also usable without the window) =====================
+#region ===================== Logica (ook zonder venster te gebruiken) =====================
 
 function Read-AppPsd1
 {
-    # Read through a copy with BOM (Notepad saves UTF-8 without BOM)
+    # Inlezen via een kopie met BOM (Kladblok slaat UTF-8 zonder BOM op)
     param ([string]$Path)
     $tmp = [System.IO.Path]::GetTempFileName() + '.psd1'
     try
@@ -210,18 +144,15 @@ function Read-AppPsd1
 
 function Get-StandardTexts
 {
-    # Standard texts for all apps: _Kit\DefaultTexts.psd1 (English in the 'En' section), completed with the built-in texts
-    param ([string]$Language = 'nl', [string]$Path = $StandardTextsPath)
-    $base = if ($Language -eq 'en') { $BuiltinTextsEn } else { $BuiltinTexts }
+    # Standaardteksten voor alle apps: _Kit\Standaardteksten.psd1, aangevuld met de ingebouwde teksten
     $r = [ordered]@{}
-    foreach ($k in $TextKeys) { $r[$k] = $base[$k] }
-    if ($Path -and (Test-Path $Path))
+    foreach ($k in $TextKeys) { $r[$k] = $BuiltinTexts[$k] }
+    if (Test-Path $StandardTextsPath)
     {
         try
         {
-            $f = Read-AppPsd1 $Path
-            if ($Language -eq 'en') { $f = $f['En'] }
-            if ($f -is [hashtable]) { foreach ($k in $TextKeys) { if ($f[$k]) { $r[$k] = $f[$k] } } }
+            $f = Read-AppPsd1 $StandardTextsPath
+            foreach ($k in $TextKeys) { if ($f[$k]) { $r[$k] = $f[$k] } }
         }
         catch { }
     }
@@ -230,52 +161,66 @@ function Get-StandardTexts
 
 function ConvertTo-StandardTextsPsd1
 {
-    param ($Texts, $TextsEn)
+    param ($Texts)
     $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
     $lines = @(
-        '#  STANDARD TEXTS - for all apps (edited with the AppUpdateKit Builder).'
-        '#  An app uses these texts unless app.psd1 has its own text. Dutch at the top, English under "En".'
-        '#  Dutch texts: {AppName}, {Versie}, {Minuten}, {MaxUitstel}   English texts: {AppName}, {Version}, {Minutes}, {MaxPostpones}'
+        '#  STANDAARDTEKSTEN voor alle apps (bewerkt met de AppUpdateKit Builder).'
+        '#  Een app gebruikt deze tekst, tenzij er in app.psd1 een eigen tekst staat.'
+        '#  Ingevuld worden: {AppName}, {Versie}, {Minuten} en {MaxUitstel}'
         '@{'
     )
-    foreach ($k in $TextKeys) { $lines += "    $($k.PadRight(23))= $(& $q $Texts[$k])" }
-    $lines += ''
-    $lines += '    En = @{'
-    foreach ($k in $TextKeys) { $lines += "        $($k.PadRight(23))= $(& $q $TextsEn[$k])" }
-    $lines += '    }'
+    foreach ($k in $TextKeys) { $lines += "    $($k.PadRight(18))= $(& $q $Texts[$k])" }
     $lines += '}'
     return ($lines -join "`r`n") + "`r`n"
 }
 
-function Get-BuildPart([string]$Folder, [string]$Name)
+function Get-VersionFolder([string]$InstallerPath)
 {
-    # File or folder of a build; builds made before the English file names use the Dutch names
-    $old = @{ 'Source' = 'Bron'; 'BuildInfo.txt' = 'Bouwinfo.txt'; 'DefaultTexts.psd1' = 'Standaardteksten.psd1' }
-    $p = Join-Path $Folder $Name
-    if (-not (Test-Path $p) -and $old[$Name]) { $o = Join-Path $Folder $old[$Name]; if (Test-Path $o) { return $o } }
-    return $p
+    # Versiemap bij een installer, als startpunt voor 'Kiezen...' bij 'Pakket opslaan in' (vult niets automatisch in):
+    #   ...\versies\8.18.0.51429\source\setup.exe      -> ...\versies\8.18.0.51429
+    #   ...\versies\8.18.0.51429\source\x64\setup.exe  -> ...\versies\8.18.0.51429
+    #   ...\8.9.8.1\source\npp.exe                      -> ...\8.9.8.1
+    $dir = Split-Path $InstallerPath -Parent
+    $d = $dir
+    while ($d)
+    {
+        $parent = Split-Path $d -Parent
+        if (-not $parent -or $parent -eq $d) { break }
+        if ((Split-Path $parent -Leaf) -ieq 'versies') { return $d }
+        $d = $parent
+    }
+    if ((Split-Path $dir -Leaf) -ieq 'source') { return (Split-Path $dir -Parent) }
+    return $dir
 }
 
 function Get-AppVersions
 {
-    # All builds of an app: Output\<AppId>\<version>\ and earlier builds in Output\<AppId>\_archive\<version>_<date>\
+    # Alle builds van een app: Output\<AppId>\<versie>\ en eerdere builds in Output\<AppId>\_archief\<versie>_<datum>\
     param ([string]$AppId)
     $dir = Join-Path (Join-Path $KitRoot 'Output') $AppId
     if (-not (Test-Path $dir)) { return @() }
 
     $make = {
         param ($folder, [string]$ver, [bool]$isArchive)
+        # Staat het pakket in een eigen map (OutputFolder)? Dan staat hier alleen een verwijzing.
+        $ptr = Join-Path $folder.FullName 'Pakketlocatie.txt'
+        if (Test-Path $ptr)
+        {
+            $target = ([System.IO.File]::ReadAllText($ptr)).Trim()
+            if ($target -and (Test-Path $target)) { $folder = Get-Item -LiteralPath $target }
+        }
         $v = $null; try { $v = [version]$ver } catch { }
         $pkgFile = Join-Path $folder.FullName 'install.intunewin'
-        $bi = Get-BuildPart $folder.FullName 'BuildInfo.txt'
+        $bi = Join-Path $folder.FullName 'Bouwinfo.txt'
         $built = if (Test-Path $bi) { (Get-Item $bi).LastWriteTime } else { $folder.LastWriteTime }
-        $bron = Get-BuildPart $folder.FullName 'Source'
+        $bron = Join-Path $folder.FullName 'Bron'
         [pscustomobject]@{
             Version       = $ver
-            Label         = if ($isArchive) { "$ver  $(T '(vervangen)' '(replaced)')" } else { $ver }
+            Label         = if ($isArchive) { "$ver  (vervangen)" } else { $ver }
             IsArchive     = $isArchive
             SortKey       = $v
             Path          = $folder.FullName
+            Pointer       = if (Test-Path $ptr) { $ptr } else { '' }
             Built         = $built
             HasPkg        = Test-Path $pkgFile
             SizeMB        = if (Test-Path $pkgFile) { [math]::Round((Get-Item $pkgFile).Length / 1MB) } else { 0 }
@@ -285,11 +230,11 @@ function Get-AppVersions
     }
 
     $items = @()
-    foreach ($d in (Get-ChildItem $dir -Directory | Where-Object { $_.Name -notin '_archive', '_archief' })) { $items += & $make $d $d.Name $false }
-    foreach ($archName in '_archive', '_archief')     # _archief = archive of builds made before the English file names
+    foreach ($d in (Get-ChildItem $dir -Directory | Where-Object { $_.Name -ne '_archief' })) { $items += & $make $d $d.Name $false }
+    $arch = Join-Path $dir '_archief'
+    if (Test-Path $arch)
     {
-        $arch = Join-Path $dir $archName
-        if (Test-Path $arch) { foreach ($d in (Get-ChildItem $arch -Directory)) { $items += & $make $d (($d.Name -split '_')[0]) $true } }
+        foreach ($d in (Get-ChildItem $arch -Directory)) { $items += & $make $d (($d.Name -split '_')[0]) $true }
     }
     return $items | Sort-Object @{ Expression = { $_.SortKey }; Descending = $true },
                                 @{ Expression = { $_.IsArchive }; Descending = $false },
@@ -302,52 +247,59 @@ function ConvertTo-Psd1Text
     $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
     $procs = (@($d.Processes) | Where-Object { $_ } | ForEach-Object { & $q $_ }) -join ', '
     $bool = if ($d.OnlyUpdateExisting) { '$true' } else { '$false' }
-    $popup = if ("$($d.PopupLanguage)" -in 'nl', 'en') { "$($d.PopupLanguage)" } else { 'Auto' }
 
     $lines = @(
-        (T '#  Gemaakt met de AppUpdateKit Builder. Je kunt dit bestand ook met de hand aanpassen.' '#  Created with the AppUpdateKit Builder. You can also edit this file by hand.')
-        (T '#  Texts = Nederlands, TextsEn = Engels. In teksten: {AppName}, {Versie}, {Minuten}, {MaxUitstel}. Leeg = standaardtekst.' '#  Texts = Dutch, TextsEn = English. In texts: {AppName}, {Version}, {Minutes}, {MaxPostpones}. Empty = standard text.')
+        '#  Gemaakt met de AppUpdateKit Builder. Je kunt dit bestand ook met de hand aanpassen.'
+        '#  In teksten worden ingevuld: {AppName}, {Versie}, {Minuten} en {MaxUitstel}. Leeg = standaardtekst.'
         '@{'
-        (T '    # ---------- 1. Basis ----------' '    # ---------- 1. Basics ----------')
+        '    # ---------- 1. Basis ----------'
         "    AppId      = $(& $q $d.AppId)"
         "    AppName    = $(& $q $d.AppName)"
         "    Version    = $(& $q $d.Version)"
         "    DetectName = $(& $q $d.DetectName)"
         "    Processes  = @($procs)"
+        "    OutputFolder = $(& $q $d.OutputFolder)   # map voor het pakket; leeg = Output\<AppId>\<versie> in de kit"
         ''
-        (T '    # ---------- 2. Uiterlijk ----------' '    # ---------- 2. Appearance ----------')
-        "    Icon          = $(& $q $d.Icon)"
-        "    AccentColor   = $(& $q $d.AccentColor)"
-        "    PopupLanguage = $(& $q $popup)   # $(T 'Auto (Windows-taal van de gebruiker) | nl | en' 'Auto (user''s Windows language) | nl | en')"
+        '    # ---------- 1b. Detectie: hoe Intune ziet dat de app er staat ----------'
+        "    DetectionMethod = $(& $q $(if ($d.DetectionMethod) { $d.DetectionMethod } else { 'AppsEnOnderdelen' }))   # AppsEnOnderdelen | Bestand | Register | Script"
+        "    DetectVersion   = $(& $q $d.DetectVersion)   # leeg = versie van dit pakket; '-' = alleen kijken of het bestaat"
+        "    DetectFile      = $(& $q $d.DetectFile)   # bij Bestand, bijv. %ProgramFiles%\Remote help\RemoteHelp.exe"
+        "    DetectRegKey    = $(& $q $d.DetectRegKey)   # bij Register, bijv. HKLM\SOFTWARE\Leverancier\App"
+        "    DetectRegValue  = $(& $q $d.DetectRegValue)   # bij Register, bijv. Version (leeg = alleen de sleutel)"
+        "    DetectScript    = $(& $q $d.DetectScript)"
         ''
-        (T '    # ---------- 3. Wie krijgt de update ----------' '    # ---------- 3. Who gets the update ----------')
+        '    # ---------- 2. Uiterlijk ----------'
+        "    Icon        = $(& $q $d.Icon)"
+        "    AccentColor = $(& $q $d.AccentColor)"
+        ''
+        '    # ---------- 3. Wie krijgt de update ----------'
         "    OnlyUpdateExisting = $bool"
-        "    InstallDuringSetup = $(if ($d.InstallDuringSetup -eq $false) { '$false' } else { '$true' })   # $(T '$true = nieuwe laptops (Autopilot) direct installeren, zonder popup' '$true = new laptops (Autopilot): install right away, no popup')"
+        "    InstallDuringSetup = $(if ($d.InstallDuringSetup -eq $false) { '$false' } else { '$true' })   # `$true = nieuwe laptops (Autopilot) direct installeren, zonder popup"
         ''
-        (T '    # ---------- 4. Uitstellen ----------' '    # ---------- 4. Postponing ----------')
+        '    # ---------- 4. Uitstellen ----------'
         "    MaxPostpones          = $([int]$d.MaxPostpones)"
         "    PostponeHours         = $([int]$d.PostponeHours)"
         "    ConsentTimeoutMinutes = $([int]$d.ConsentTimeoutMinutes)"
         "    ForcedDelayMinutes    = $([int]$d.ForcedDelayMinutes)"
         ''
-        (T '    # ---------- 4b. Wanneer ----------' '    # ---------- 4b. When ----------')
-        "    InstallWindow = $(& $q $(if ($d.InstallWindow) { $d.InstallWindow } else { 'Altijd' }))   # $(T 'Altijd | Werktijd | BuitenWerktijd' 'Altijd (always) | Werktijd (working hours) | BuitenWerktijd (outside working hours)')"
-        "    WorkHours     = $(& $q $(if ($d.WorkHours) { $d.WorkHours } else { '08:00-17:00' }))"
-        "    WorkDays      = $(& $q $(if ($d.WorkDays) { $d.WorkDays } else { 'ma,di,wo,do,vr' }))$(T '' '   # ma=Mon di=Tue wo=Wed do=Thu vr=Fri za=Sat zo=Sun')"
-        "    IdleMinutes   = $([int]("0$($d.IdleMinutes)"))   # $(T '> 0 = na zoveel minuten inactief of vergrendeld direct installeren' '> 0 = install right away after this many minutes idle or locked')"
-        "    NoUserAction  = $(& $q $(if ($d.NoUserAction) { $d.NoUserAction } else { 'Installeren' }))   # $(T 'Installeren | Wachten' 'Installeren (install) | Wachten (wait)')"
+        '    # ---------- 4b. Wanneer ----------'
+        "    InstallWindow = $(& $q $(if ($d.InstallWindow) { $d.InstallWindow } else { 'Altijd' }))   # Altijd | Werktijd | BuitenWerktijd"
+        "    WorkHours     = $(& $q $(if ($d.WorkHours) { $d.WorkHours } else { '08:00-17:00' }))   # meerdere blokken mag: '09:00-10:00,13:00-14:00'"
+        "    WorkDays      = $(& $q $(if ($d.WorkDays) { $d.WorkDays } else { 'ma,di,wo,do,vr' }))"
+        "    IdleMinutes   = $([int]("0$($d.IdleMinutes)"))   # > 0 = na zoveel minuten inactief of vergrendeld direct installeren"
+        "    NoUserAction  = $(& $q $(if ($d.NoUserAction) { $d.NoUserAction } else { 'Installeren' }))   # Installeren | Wachten"
         ''
-        (T '    # ---------- 4c. Herstart na de installatie ----------' '    # ---------- 4c. Restart after installation ----------')
-        "    RestartMode            = $(& $q $(if ($d.RestartMode) { $d.RestartMode } else { 'Nooit' }))   # $(T 'Nooit | AlsNodig (3010/1641) | Altijd' 'Nooit (never) | AlsNodig (3010/1641) | Altijd (always)')"
-        "    RestartReminderMinutes = $([int]$(if ($null -ne $d.RestartReminderMinutes -and "$($d.RestartReminderMinutes)" -ne '') { $d.RestartReminderMinutes } else { 60 }))   # $(T 'Later: opnieuw vragen na (minuten)' 'Later: ask again after (minutes)')"
-        "    RestartDeadlineHours   = $([int]$(if ($null -ne $d.RestartDeadlineHours -and "$($d.RestartDeadlineHours)" -ne '') { $d.RestartDeadlineHours } else { 24 }))   # $(T 'verplicht herstarten na (uren, 0 = nooit)' 'mandatory restart after (hours, 0 = never)')"
-        "    RestartWarningMinutes  = $([int]$(if ($null -ne $d.RestartWarningMinutes -and "$($d.RestartWarningMinutes)" -ne '') { $d.RestartWarningMinutes } else { 15 }))   # $(T 'waarschuwing voor de verplichte herstart (minuten)' 'warning before the mandatory restart (minutes)')"
+        '    # ---------- 4c. Herstart na de installatie ----------'
+        "    RestartMode            = $(& $q $(if ($d.RestartMode) { $d.RestartMode } else { 'Nooit' }))   # Nooit | AlsNodig (3010/1641) | Altijd"
+        "    RestartReminderMinutes = $([int]$(if ($null -ne $d.RestartReminderMinutes -and "$($d.RestartReminderMinutes)" -ne '') { $d.RestartReminderMinutes } else { 60 }))   # Later: opnieuw vragen na (minuten)"
+        "    RestartDeadlineHours   = $([int]$(if ($null -ne $d.RestartDeadlineHours -and "$($d.RestartDeadlineHours)" -ne '') { $d.RestartDeadlineHours } else { 24 }))   # verplicht herstarten na (uren, 0 = nooit)"
+        "    RestartWarningMinutes  = $([int]$(if ($null -ne $d.RestartWarningMinutes -and "$($d.RestartWarningMinutes)" -ne '') { $d.RestartWarningMinutes } else { 15 }))   # waarschuwing voor de verplichte herstart (minuten)"
         ''
-        (T '    # ---------- 4d. Verwijderen ----------' '    # ---------- 4d. Uninstall ----------')
-        "    UninstallNotify = $(if ($d.UninstallNotify -eq $true) { '$true' } else { '$false' })   # $(T '$true = meldingen rechtsonder bij het verwijderen' '$true = notifications bottom right when removing')"
+        '    # ---------- 4d. Verwijderen ----------'
+        "    UninstallNotify = $(if ($d.UninstallNotify -eq $true) { '$true' } else { '$false' })   # `$true = meldingen rechtsonder bij het verwijderen"
         ''
-        (T '    # ---------- 5. Installatie (onderdelen worden in deze volgorde geïnstalleerd) ----------' '    # ---------- 5. Installation (components are installed in this order) ----------')
-        "    AutoInstallSteps = $(if ($d.AutoInstallSteps) { '$true' } else { '$false' })   # $(T '$true = install-app.cmd wordt hieruit gemaakt' '$true = install-app.cmd is created from this')"
+        '    # ---------- 5. Installatie (onderdelen worden in deze volgorde geïnstalleerd) ----------'
+        "    AutoInstallSteps = $(if ($d.AutoInstallSteps) { '$true' } else { '$false' })   # `$true = install-app.cmd wordt hieruit gemaakt"
         '    Components = @('
     )
     foreach ($c in @($d.Components))
@@ -358,22 +310,19 @@ function ConvertTo-Psd1Text
     }
     $lines += @(
         '    )'
-        "    PreInstall  = $(& $q $d.PreInstall)    # $(T 'cmd-regels vóór de onderdelen' 'cmd lines before the components')"
-        "    PostInstall = $(& $q $d.PostInstall)    # $(T 'cmd-regels na de onderdelen' 'cmd lines after the components')"
+        "    PreInstall  = $(& $q $d.PreInstall)    # cmd-regels vóór de onderdelen"
+        "    PostInstall = $(& $q $d.PostInstall)    # cmd-regels na de onderdelen"
         ''
-        (T '    # ---------- 6. Teksten voor deze app/versie (leeg = _Kit\DefaultTexts.psd1) ----------' '    # ---------- 6. Texts for this app/version (empty = _Kit\DefaultTexts.psd1) ----------')
+        '    # ---------- 6. Teksten voor deze app/versie (leeg = _Kit\Standaardteksten.psd1) ----------'
+        '    Texts = @{'
     )
-    foreach ($section in 'Texts', 'TextsEn')
+    foreach ($k in $TextKeys)
     {
-        $lines += "    $section = @{"
-        foreach ($k in $TextKeys)
-        {
-            $v = ''
-            if ($d[$section] -and $d[$section][$k]) { $v = $d[$section][$k] }
-            $lines += "        $($k.PadRight(23))= $(& $q $v)"
-        }
-        $lines += '    }'
+        $v = ''
+        if ($d.Texts -and $d.Texts[$k]) { $v = $d.Texts[$k] }
+        $lines += "        $($k.PadRight(18))= $(& $q $v)"
     }
+    $lines += '    }'
     $lines += '}'
     return ($lines -join "`r`n") + "`r`n"
 }
@@ -396,9 +345,44 @@ function Get-MsiProperty
     catch { return $null }
 }
 
+function Get-MsiIcon
+{
+    <#
+        Haalt het pictogram uit de tabel Icon van een MSI en geeft het pad naar een tijdelijk .ico/.exe/.dll terug
+        (of $null als de MSI geen pictogram heeft). Voorkeur: ARPPRODUCTICON (het icoon in Apps en onderdelen), anders het grootste.
+    #>
+    param ([string]$MsiPath, [string]$WorkDir)
+    $db = $null
+    try
+    {
+        $wi = New-Object -ComObject WindowsInstaller.Installer
+        $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($MsiPath, 0))
+        # Tabel Icon exporteren: de pictogrammen komen als losse bestanden in de submap Icon
+        $db.GetType().InvokeMember('Export', 'InvokeMethod', $null, $db, @('Icon', $WorkDir, 'Icon.idt')) | Out-Null
+    }
+    catch { return $null }
+    finally { if ($db) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db) } }
+
+    $files = @(Get-ChildItem -Path $WorkDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'Icon.idt' -and $_.Length -gt 0 })
+    if (-not $files.Count) { return $null }
+    $pref = Get-MsiProperty $MsiPath 'ARPPRODUCTICON'
+    $pick = if ($pref) { $files | Where-Object { $_.Name -like "$pref*" } | Select-Object -First 1 }
+    if (-not $pick) { $pick = $files | Sort-Object Length -Descending | Select-Object -First 1 }
+
+    # Soort bestand bepalen aan de eerste bytes: 00 00 01 00 = .ico, 'MZ' = .exe/.dll
+    $head = New-Object byte[] 4
+    $fs = [System.IO.File]::OpenRead($pick.FullName); try { [void]$fs.Read($head, 0, 4) } finally { $fs.Dispose() }
+    $ext = if ($head[0] -eq 0 -and $head[1] -eq 0 -and $head[2] -eq 1 -and $head[3] -eq 0) { '.ico' }
+           elseif ($head[0] -eq 0x4D -and $head[1] -eq 0x5A) { '.exe' } else { $null }
+    if (-not $ext) { return $null }
+    $out = Join-Path $WorkDir ("msi-icon" + $ext)
+    Copy-Item -LiteralPath $pick.FullName -Destination $out -Force
+    return $out
+}
+
 function Get-InstallerInfo
 {
-    # Detects the installer type and suggests silent parameters
+    # Herkent het type installer en stelt stille parameters voor
     param ([string]$Path)
 
     $info = @{ Kind = 'EXE'; ProductName = ''; Version = ''; ProductCode = ''; Args = '/quiet /norestart'; Note = '' }
@@ -411,7 +395,7 @@ function Get-InstallerInfo
         $info.Version     = Get-MsiProperty $Path 'ProductVersion'
         $info.ProductCode = Get-MsiProperty $Path 'ProductCode'
         $info.Args        = ''
-        $info.Note        = T 'MSI: wordt stil geïnstalleerd met msiexec /qn.' 'MSI: installed silently with msiexec /qn.'
+        $info.Note        = 'MSI: wordt stil geïnstalleerd met msiexec /qn.'
         return $info
     }
 
@@ -425,7 +409,7 @@ function Get-InstallerInfo
     }
     catch { }
 
-    # Search the first 4 MB for signs of the installer framework
+    # Eerste 4 MB doorzoeken op kenmerken van het installatieprogramma
     $text = ''
     try
     {
@@ -438,30 +422,30 @@ function Get-InstallerInfo
 
     if ($text -match 'Nullsoft|NSIS')
     {
-        $info.Kind = 'NSIS'; $info.Args = '/S'; $info.Note = T 'NSIS-installer: /S = stil.' 'NSIS installer: /S = silent.'
+        $info.Kind = 'NSIS'; $info.Args = '/S'; $info.Note = 'NSIS-installer: /S = stil.'
     }
     elseif ($text -match 'Inno Setup')
     {
-        $info.Kind = 'Inno'; $info.Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'; $info.Note = T 'Inno Setup-installer.' 'Inno Setup installer.'
+        $info.Kind = 'Inno'; $info.Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'; $info.Note = 'Inno Setup-installer.'
     }
     elseif ($text -match 'InstallShield')
     {
-        $info.Kind = 'InstallShield'; $info.Args = '/s /v"/qn /norestart"'; $info.Note = T 'InstallShield: controleer de parameters bij de leverancier.' 'InstallShield: check the parameters with the vendor.'
+        $info.Kind = 'InstallShield'; $info.Args = '/s /v"/qn /norestart"'; $info.Note = 'InstallShield: controleer de parameters bij de leverancier.'
     }
     elseif ($text -match 'WixBundle|WiX Toolset|\.wixburn')
     {
-        $info.Kind = 'WiX'; $info.Args = '/quiet /norestart'; $info.Note = T 'WiX-bundle.' 'WiX bundle.'
+        $info.Kind = 'WiX'; $info.Args = '/quiet /norestart'; $info.Note = 'WiX-bundle.'
     }
     else
     {
-        $info.Note = T 'Type niet herkend: controleer de stille parameters bij de leverancier.' 'Type not recognised: check the silent parameters with the vendor.'
+        $info.Note = 'Type niet herkend: controleer de stille parameters bij de leverancier.'
     }
     return $info
 }
 
 function Find-UninstallString
 {
-    # Searches "Apps & features" on THIS pc for an uninstall command
+    # Zoekt op DEZE pc in "Apps en onderdelen" naar een verwijdercommando
     param ([string]$DisplayName)
     if (-not $DisplayName -or -not (Test-Path 'HKLM:\SOFTWARE')) { return $null }
     $paths = @(
@@ -484,18 +468,18 @@ function New-InstallCmdText
             else { "`"$InstallerName`" $InstallArgs".Trim() }
 @"
 rem ===========================================================================
-rem  $(T 'INSTALLATIESTAPPEN' 'INSTALLATION STEPS') - $AppName
-rem  $(T 'Gemaakt met de Builder; je mag dit aanpassen (extra stappen, bestanden, ...).' 'Created with the Builder; you may change this (extra steps, files, ...).')
-rem  $(T 'De popup, de procescheck en de meldingen regelt install.cmd al.' 'install.cmd already handles the popup, the process check and the notifications.')
+rem  INSTALLATIESTAPPEN - $AppName
+rem  Gemaakt met de Builder; je mag dit aanpassen (extra stappen, bestanden, ...).
+rem  De popup, de procescheck en de meldingen regelt install.cmd al.
 rem ===========================================================================
 
-rem ---- $(T 'Voorbereiding (bijv. een runtime die eerst nodig is)' 'Preparation (e.g. a runtime that is needed first)') ----
+rem ---- Voorbereiding (bijv. een runtime die eerst nodig is) ----
 
-rem ---- $(T 'De app zelf' 'The app itself') ($($Info.Kind)) ----
+rem ---- De app zelf ($($Info.Kind)) ----
 $line
 set APP_EXITCODE=%ERRORLEVEL%
 
-rem ---- $(T 'Nazorg (extra bestanden, snelkoppelingen, ingebouwde updater uitzetten, ...)' 'Aftercare (extra files, shortcuts, disable the built-in updater, ...)') ----
+rem ---- Nazorg (extra bestanden, snelkoppelingen, ingebouwde updater uitzetten, ...) ----
 
 exit /b %APP_EXITCODE%
 "@
@@ -503,7 +487,7 @@ exit /b %APP_EXITCODE%
 
 function Get-ComponentInfo
 {
-    # Type, suggested parameters and (for MSI) product code of a file to install
+    # Type, voorgestelde parameters en (bij MSI) productcode van een bestand dat geïnstalleerd moet worden
     param ([string]$Path)
     $ext = [System.IO.Path]::GetExtension($Path).ToLower()
     $r = @{ File = [System.IO.Path]::GetFileName($Path); Kind = 'EXE'; Args = ''; Codes = '0 3010 1641'; Main = $false
@@ -512,13 +496,13 @@ function Get-ComponentInfo
     {
         '.msi' { $i = Get-InstallerInfo $Path; $r.Kind = 'MSI'; $r.ProductCode = "$($i.ProductCode)"; $r.ProductName = "$($i.ProductName)"; $r.Version = "$($i.Version)"; $r.Note = $i.Note }
         '.exe' { $i = Get-InstallerInfo $Path; $r.Kind = $i.Kind; $r.Args = $i.Args; $r.ProductName = "$($i.ProductName)"; $r.Version = "$($i.Version)"; $r.Note = $i.Note }
-        '.msp' { $r.Kind = 'MSP'; $r.Note = T 'MSI-patch (msiexec /p).' 'MSI patch (msiexec /p).' }
-        '.ps1' { $r.Kind = 'PS1'; $r.Codes = '0'; $r.Note = T 'PowerShell-script.' 'PowerShell script.' }
-        '.cmd' { $r.Kind = 'CMD'; $r.Codes = '0'; $r.Note = T 'Batchbestand.' 'Batch file.' }
-        '.bat' { $r.Kind = 'CMD'; $r.Codes = '0'; $r.Note = T 'Batchbestand.' 'Batch file.' }
-        '.reg' { $r.Kind = 'REG'; $r.Codes = '0'; $r.Note = T 'Registerbestand (reg import).' 'Registry file (reg import).' }
+        '.msp' { $r.Kind = 'MSP'; $r.Note = 'MSI-patch (msiexec /p).' }
+        '.ps1' { $r.Kind = 'PS1'; $r.Codes = '0'; $r.Note = 'PowerShell-script.' }
+        '.cmd' { $r.Kind = 'CMD'; $r.Codes = '0'; $r.Note = 'Batchbestand.' }
+        '.bat' { $r.Kind = 'CMD'; $r.Codes = '0'; $r.Note = 'Batchbestand.' }
+        '.reg' { $r.Kind = 'REG'; $r.Codes = '0'; $r.Note = 'Registerbestand (reg import).' }
     }
-    # Typical prerequisites: also accept "already installed" (1638)
+    # Typische hulponderdelen: "al geïnstalleerd" (1638) ook goedkeuren
     if ($r.File -match '(?i)runtime|redist|vcredist|dotnet|webview') { $r.Codes = '0 3010 1641 1638' }
     return $r
 }
@@ -541,22 +525,22 @@ function Get-ComponentCommand
 
 function New-InstallCmdFromComponents
 {
-    # Creates install-app.cmd: components in order, with their own parameters and accepted exit codes.
-    # When a component fails, the installation stops with that component's exit code.
+    # Maakt install-app.cmd: onderdelen in volgorde, met eigen parameters en toegestane exitcodes.
+    # Mislukt een onderdeel, dan stopt de installatie met de exitcode van dat onderdeel.
     param ([string]$AppName, $Components, [string]$PreInstall, [string]$PostInstall)
 
     $L = @(
         'rem ==========================================================================='
-        "rem  $(T 'INSTALLATIESTAPPEN' 'INSTALLATION STEPS') - $AppName"
-        (T 'rem  Automatisch gemaakt door de Builder uit de onderdelen in tabblad 2.' 'rem  Created automatically by the Builder from the components in tab 2.')
-        (T 'rem  Wijzig de onderdelen in de Builder (of zet "automatisch maken" uit).' 'rem  Change the components in the Builder (or switch off "create automatically").')
+        "rem  INSTALLATIESTAPPEN - $AppName"
+        'rem  Automatisch gemaakt door de Builder uit de onderdelen in tabblad 2.'
+        'rem  Wijzig de onderdelen in de Builder (of zet "automatisch maken" uit).'
         'rem ==========================================================================='
         ''
         'set APP_EXITCODE=0'
     )
     if ("$PreInstall".Trim())
     {
-        $L += ''; $L += (T 'rem ---- Voor de installatie ----' 'rem ---- Before the installation ----'); $L += ("$PreInstall".TrimEnd() -split "`r?`n")
+        $L += ''; $L += 'rem ---- Voor de installatie ----'; $L += ("$PreInstall".TrimEnd() -split "`r?`n")
     }
     $i = 0
     foreach ($c in @($Components))
@@ -567,13 +551,13 @@ function New-InstallCmdFromComponents
         if (-not $codes.Count) { $codes = @('0', '3010', '1641') }
         $safe = "$($c.File)" -replace '[()&|<>^%!]', ''
         $L += ''
-        $L += "rem ---- $(T 'Onderdeel' 'Component') ${i}: $($c.File) ($($c.Kind))$(if ($c.Main) { T ' - hoofdonderdeel' ' - main component' }) ----"
+        $L += "rem ---- Onderdeel ${i}: $($c.File) ($($c.Kind))$(if ($c.Main) { ' - hoofdonderdeel' }) ----"
         $L += Get-ComponentCommand $c
         $L += 'set STEP=%ERRORLEVEL%'
         $L += 'set OK='
         $L += "for %%c in ($($codes -join ' ')) do if `"%STEP%`"==`"%%c`" set OK=1"
         $L += 'if not defined OK ('
-        $L += "    echo $(T 'Onderdeel' 'Component') $i - $safe - $(T 'is mislukt met exitcode' 'failed with exit code') %STEP%"
+        $L += "    echo Onderdeel $i - $safe - is mislukt met exitcode %STEP%"
         $L += '    exit /b %STEP%'
         $L += ')'
         $L += 'if "%STEP%"=="3010" set APP_EXITCODE=3010'
@@ -581,7 +565,7 @@ function New-InstallCmdFromComponents
     }
     if ("$PostInstall".Trim())
     {
-        $L += ''; $L += (T 'rem ---- Na de installatie ----' 'rem ---- After the installation ----'); $L += ("$PostInstall".TrimEnd() -split "`r?`n")
+        $L += ''; $L += 'rem ---- Na de installatie ----'; $L += ("$PostInstall".TrimEnd() -split "`r?`n")
     }
     $L += ''
     $L += 'exit /b %APP_EXITCODE%'
@@ -596,17 +580,17 @@ function New-UninstallCmdText
     if ($Info.Kind -eq 'MSI' -and $Info.ProductCode) { $line = "msiexec.exe /x $($Info.ProductCode) /qn /norestart" }
     if (-not $line -and $DetectName)
     {
-        # Remove by name (MSI product code or the app's own uninstaller); works on every laptop
+        # Op naam verwijderen (MSI-productcode of het eigen verwijderprogramma); werkt op elke laptop
         $line = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"Remove-App.ps1`" -Name `"$DetectName`""
         if ($Info.Kind -in 'NSIS', 'Inno', 'EXE') { $line += " -ExeArgs `"$(if ($Info.Kind -eq 'Inno') { '/VERYSILENT /NORESTART' } else { '/S' })`"" }
     }
     if (-not $line)
     {
-        $line = "rem $(T 'VUL IN: het verwijdercommando, bijvoorbeeld' 'FILL IN: the uninstall command, for example'):`r`nrem `"%ProgramFiles%\$AppName\uninstall.exe`" /S`r`nver > nul"
+        $line = "rem VUL IN: het verwijdercommando, bijvoorbeeld:`r`nrem `"%ProgramFiles%\$AppName\uninstall.exe`" /S`r`nver > nul"
     }
 @"
 rem ===========================================================================
-rem  $(T 'VERWIJDERSTAPPEN' 'UNINSTALL STEPS') - $AppName
+rem  VERWIJDERSTAPPEN - $AppName
 rem ===========================================================================
 
 $line
@@ -618,7 +602,7 @@ exit /b %APP_EXITCODE%
 
 function Find-HeadlessBrowser
 {
-    # Edge is on every Windows 10/11 laptop; Chrome as a fallback
+    # Edge staat op elke Windows 10/11-laptop; Chrome als reserve
     $candidates = @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
         "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
@@ -651,11 +635,11 @@ function Save-PngCrop([string]$Source, [string]$Target, [int]$Size)
 function ConvertFrom-SvgToPng
 {
     <#
-        Converts an .svg to a Size x Size PNG with a transparent background.
-        Windows cannot draw SVG itself; that is why Edge (headless) does it.
+        Zet een .svg om naar een PNG van Size x Size met transparante achtergrond.
+        Windows kan zelf geen SVG tekenen; daarom doet Edge (headless) het.
     #>
     param ([string]$Svg, [string]$Png, [int]$Size = 256, [string]$Browser = (Find-HeadlessBrowser), [string[]]$ExtraArgs = @(), [switch]$NoCrop)
-    if (-not $Browser) { throw (T 'Microsoft Edge of Google Chrome is nodig om een SVG om te zetten, maar is niet gevonden. Sla het logo op als .png en kies dat.' 'Microsoft Edge or Google Chrome is needed to convert an SVG, but was not found. Save the logo as .png and pick that.') }
+    if (-not $Browser) { throw 'Microsoft Edge of Google Chrome is nodig om een SVG om te zetten, maar is niet gevonden. Sla het logo op als .png en kies dat.' }
 
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ("AppKitSvg_" + [guid]::NewGuid().ToString('N'))
     New-Item -Path $work -ItemType Directory -Force | Out-Null
@@ -669,19 +653,19 @@ function ConvertFrom-SvgToPng
         [System.IO.File]::WriteAllText($html, $page, (New-Object System.Text.UTF8Encoding $false))
         $out = Join-Path $work 'logo.png'
 
-        # Own profile folder: otherwise Edge hands the job to an already open Edge window
+        # Eigen profielmap: anders geeft Edge de opdracht door aan een al geopend Edge-venster
         $argList = @('--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
                      '--disable-extensions', '--force-device-scale-factor=1', '--default-background-color=00000000',
                      "--window-size=$($Size * 2 + 200),$($Size * 2 + 200)", "--user-data-dir=`"$(Join-Path $work 'profiel')`"",
                      "--screenshot=`"$out`"") + $ExtraArgs + @("`"file:///$($html.Replace('\', '/').TrimStart('/'))`"")
-        $hide = @{}; if ($IsWindows -ne $false) { $hide.WindowStyle = 'Hidden' }   # PS 5.1: $IsWindows does not exist
+        $hide = @{}; if ($IsWindows -ne $false) { $hide.WindowStyle = 'Hidden' }   # PS 5.1: $IsWindows bestaat niet
         $proc = Start-Process -FilePath $Browser -ArgumentList $argList -PassThru @hide
         $null = $proc.Handle
-        if (-not $proc.WaitForExit(30000)) { try { $proc.Kill() } catch { }; throw (T 'Het omzetten van de SVG duurde te lang.' 'Converting the SVG took too long.') }
-        if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 100) { throw (T 'De SVG kon niet worden omgezet. Klopt het bestand? Probeer anders een .png.' 'The SVG could not be converted. Is the file valid? Otherwise try a .png.') }
+        if (-not $proc.WaitForExit(30000)) { try { $proc.Kill() } catch { }; throw 'Het omzetten van de SVG duurde te lang.' }
+        if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 100) { throw 'De SVG kon niet worden omgezet. Klopt het bestand? Probeer anders een .png.' }
         if ($NoCrop) { Copy-Item -LiteralPath $out -Destination $Png -Force; return }
 
-        # The window was rendered larger (small headless windows are cut off at the bottom): crop the logo top left
+        # Het venster is groter gerenderd (kleine headless-vensters worden onderaan afgekapt): logo linksboven uitknippen
         Save-PngCrop -Source $out -Target $Png -Size $Size
     }
     finally
@@ -693,7 +677,7 @@ function ConvertFrom-SvgToPng
 
 function New-IcoFromImage
 {
-    # Creates an .ico (256x256, PNG inside) from an .svg/.png/.jpg/.bmp, or extracts the icon from an .exe
+    # Maakt een .ico (256x256, PNG erin) van een .svg/.png/.jpg/.bmp, of haalt het icoon uit een .exe
     param ([string]$Source, [string]$Target)
     Add-Type -AssemblyName System.Drawing
     $ext = [System.IO.Path]::GetExtension($Source).ToLower()
@@ -711,9 +695,29 @@ function New-IcoFromImage
         return
     }
 
-    if ($ext -eq '.exe')
+    if ($ext -in '.exe', '.dll')
     {
-        $img = ([System.Drawing.Icon]::ExtractAssociatedIcon($Source)).ToBitmap()
+        # Eerst de grootste versie (256x256) opvragen; ExtractAssociatedIcon geeft alleen 32x32 (wazig)
+        $img = $null
+        try
+        {
+            if (-not ('AppKit.IconX' -as [type]))
+            {
+                Add-Type -Namespace AppKit -Name IconX -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint PrivateExtractIcons(string file, int index, int cx, int cy, System.IntPtr[] icons, uint[] ids, uint count, uint flags);
+[DllImport("user32.dll")] public static extern bool DestroyIcon(System.IntPtr handle);
+'@
+            }
+            $handles = New-Object System.IntPtr[] 1; $ids = New-Object System.UInt32[] 1
+            if ([AppKit.IconX]::PrivateExtractIcons($Source, 0, 256, 256, $handles, $ids, 1, 0) -ge 1 -and $handles[0] -ne [System.IntPtr]::Zero)
+            {
+                $tmpIcon = [System.Drawing.Icon]::FromHandle($handles[0])
+                $img = $tmpIcon.ToBitmap()
+                $tmpIcon.Dispose(); [void][AppKit.IconX]::DestroyIcon($handles[0])
+            }
+        }
+        catch { $img = $null }
+        if (-not $img) { $img = ([System.Drawing.Icon]::ExtractAssociatedIcon($Source)).ToBitmap() }
     }
     else
     {
@@ -734,7 +738,7 @@ function New-IcoFromImage
 
     $out = New-Object System.IO.MemoryStream
     $bw = New-Object System.IO.BinaryWriter $out
-    $bw.Write([uint16]0); $bw.Write([uint16]1); $bw.Write([uint16]1)          # header: 1 image
+    $bw.Write([uint16]0); $bw.Write([uint16]1); $bw.Write([uint16]1)          # header: 1 afbeelding
     $bw.Write([byte]0); $bw.Write([byte]0); $bw.Write([byte]0); $bw.Write([byte]0)  # 256x256
     $bw.Write([uint16]1); $bw.Write([uint16]32)
     $bw.Write([uint32]$png.Length); $bw.Write([uint32]22)
@@ -745,95 +749,86 @@ function New-IcoFromImage
 function Expand-AppText
 {
     param ([string]$Text, [hashtable]$d)
-    return $Text.Replace('{AppName}', $d.AppName).
-                 Replace('{Versie}', [string]$d.Version).Replace('{Version}', [string]$d.Version).
-                 Replace('{Minuten}', [string]$d.ForcedDelayMinutes).Replace('{Minutes}', [string]$d.ForcedDelayMinutes).
-                 Replace('{MaxUitstel}', [string]$d.MaxPostpones).Replace('{MaxPostpones}', [string]$d.MaxPostpones)
+    return $Text.Replace('{AppName}', $d.AppName).Replace('{Versie}', [string]$d.Version).Replace('{Minuten}', [string]$d.ForcedDelayMinutes).Replace('{MaxUitstel}', [string]$d.MaxPostpones)
 }
 
 function Get-EffectiveText
 {
-    # Text as the user will see it: own text (Texts / TextsEn) -> standard text, for a new installation first the New... variant
-    param ([string]$Key, [hashtable]$d, $Std = $null, [switch]$New, [string]$Language = 'nl')
-    if (-not $Std) { $Std = Get-StandardTexts $Language }
-    $own = if ($Language -eq 'en') { $d.TextsEn } else { $d.Texts }
+    param ([string]$Key, [hashtable]$d, $Std = $null, [switch]$New)
+    if (-not $Std) { $Std = Get-StandardTexts }
     $t = $null
     if ($New -and $Key -notlike 'New*')
     {
+        # Nieuwe installatie: eerst de New-tekst van de app, dan de standaard New-tekst
         $nk = "New$Key"
-        if ($own -and $own[$nk]) { $t = $own[$nk] } elseif ($Std[$nk]) { $t = $Std[$nk] }
+        if ($d.Texts -and $d.Texts[$nk]) { $t = $d.Texts[$nk] } elseif ($Std[$nk]) { $t = $Std[$nk] }
     }
-    if (-not $t) { $t = if ($own -and $own[$Key]) { $own[$Key] } else { $Std[$Key] } }
+    if (-not $t) { $t = if ($d.Texts -and $d.Texts[$Key]) { $d.Texts[$Key] } else { $Std[$Key] } }
     return Expand-AppText $t $d
 }
 
 function Get-VersionDetails
 {
-    # Everything about a built version, from Output\<AppId>\<version>\Source and BuildInfo.txt
+    # Alles over een gebouwde versie, uit Output\<AppId>\<versie>\Bron en Bouwinfo.txt
     param ([string]$Path)
-    $bron = Get-BuildPart $Path 'Source'
-    $r = @{ Data = $null; Std = $null; StdEn = $null; Icon = $null; Summary = ''; Install = ''; Texts = ''; BuildInfo = '' }
+    $bron = Join-Path $Path 'Bron'
+    $r = @{ Data = $null; Std = $null; Icon = $null; Summary = ''; Install = ''; Texts = ''; BuildInfo = '' }
 
     $psd = Join-Path $bron 'app.psd1'
     if (-not (Test-Path $psd))
     {
-        $r.Summary = T 'Van deze versie zijn geen instellingen bewaard (gebouwd met een oudere versie van de kit).' 'No settings were kept for this version (built with an older version of the kit).'
+        $r.Summary = 'Van deze versie zijn geen instellingen bewaard (gebouwd met een oudere versie van de kit).'
         return $r
     }
     $d = Read-AppPsd1 $psd
     $r.Data = $d
 
-    # Standard texts as they were when this version was built
-    $stdFile = Get-BuildPart $bron 'DefaultTexts.psd1'
-    $r.Std   = Get-StandardTexts 'nl' $stdFile
-    $r.StdEn = Get-StandardTexts 'en' $stdFile
+    # Standaardteksten zoals ze bij het bouwen van deze versie waren
+    $std = [ordered]@{}
+    foreach ($k in $TextKeys) { $std[$k] = $BuiltinTexts[$k] }
+    $stdFile = Join-Path $bron 'Standaardteksten.psd1'
+    if (Test-Path $stdFile) { try { $f = Read-AppPsd1 $stdFile; foreach ($k in $TextKeys) { if ($f[$k]) { $std[$k] = $f[$k] } } } catch { } }
+    $r.Std = $std
 
     $icon = Join-Path $bron $(if ($d.Icon) { $d.Icon } else { 'app.ico' })
     if (Test-Path $icon) { $r.Icon = $icon }
 
-    $timeout = if ($null -ne $d.ConsentTimeoutMinutes) { T "$($d.ConsentTimeoutMinutes) minuten" "$($d.ConsentTimeoutMinutes) minutes" }
-               elseif ($null -ne $d.ConsentTimeoutSeconds) { T "$($d.ConsentTimeoutSeconds) seconden" "$($d.ConsentTimeoutSeconds) seconds" } else { T '15 minuten' '15 minutes' }
-    $who = if ($d.OnlyUpdateExisting -eq $false) { T 'iedereen in de toegewezen groep' 'everyone in the assigned group' } else { T 'alleen apparaten waar de app al staat' 'only devices where the app is installed' }
-    $deadline = if ([int]("0$($d.RestartDeadlineHours)")) { T "$($d.RestartDeadlineHours) uur" "$($d.RestartDeadlineHours) hours" } else { T 'nooit' 'never' }
-    $restart = switch ($d.RestartMode) {
-        'AlsNodig' { T "alleen als de installer erom vraagt; Later = $($d.RestartReminderMinutes) min, verplicht na $deadline" "only when the installer asks; Later = $($d.RestartReminderMinutes) min, mandatory after $deadline" }
-        'Altijd'   { T "altijd; Later = $($d.RestartReminderMinutes) min, verplicht na $deadline" "always; Later = $($d.RestartReminderMinutes) min, mandatory after $deadline" }
-        default    { T 'geen melding' 'no prompt' }
-    }
-    $popup = switch ("$($d.PopupLanguage)") { 'nl' { T 'altijd Nederlands' 'always Dutch' } 'en' { T 'altijd Engels' 'always English' } default { T 'automatisch (Windows-taal van de gebruiker)' 'automatic (user''s Windows language)' } }
+    $timeout = if ($null -ne $d.ConsentTimeoutMinutes) { "$($d.ConsentTimeoutMinutes) minuten" }
+               elseif ($null -ne $d.ConsentTimeoutSeconds) { "$($d.ConsentTimeoutSeconds) seconden" } else { '15 minuten' }
+    $who = if ($d.OnlyUpdateExisting -eq $false) { 'iedereen in de toegewezen groep' } else { 'alleen apparaten waar de app al staat' }
     $r.Summary = @(
-        "$(T 'Naam in popup        ' 'Name in popup        '): $($d.AppName)"
-        "$(T 'Versie               ' 'Version              '): $($d.Version)"
-        "$(T 'Apps en onderdelen   ' 'Apps & features      '): $($d.DetectName)"
-        "$(T 'Processen            ' 'Processes            '): $(@($d.Processes) -join ', ')"
-        "$(T 'Kleur                ' 'Colour               '): $($d.AccentColor)"
-        "$(T 'Logo                 ' 'Logo                 '): $(if ($r.Icon) { T 'aanwezig' 'present' } else { T 'ontbreekt' 'missing' })"
-        "$(T 'Taal popups          ' 'Popup language       '): $popup"
-        "$(T 'Wie krijgt de update ' 'Who gets the update  '): $who"
-        "$(T 'Uitstellen           ' 'Postponing           '): $(T "$($d.MaxPostpones) keer, telkens $($d.PostponeHours) uur" "$($d.MaxPostpones) times, $($d.PostponeHours) hours each")"
-        "$(T 'Geen keuze           ' 'No choice            '): $(T "venster sluit na $timeout" "popup closes after $timeout")"
-        "$(T 'Waarschuwing vooraf  ' 'Warning in advance   '): $(T "$($d.ForcedDelayMinutes) minuten na de laatste keer uitstellen" "$($d.ForcedDelayMinutes) minutes after the last postpone")"
-        "$(T 'Tijdvenster          ' 'Time window          '): $(Get-WindowText $d)"
-        "$(T 'Inactief             ' 'Idle                 '): $(if ([int]("0$($d.IdleMinutes)") -gt 0) { T "na $($d.IdleMinutes) minuten inactief of vergrendeld direct installeren" "install right away after $($d.IdleMinutes) minutes idle or locked" } else { T 'uit' 'off' })"
-        "Autopilot            : $(if ($d.InstallDuringSetup -eq $false) { T 'overslaan, de app komt na de inrichting' 'skip, the app follows after setup' } else { T 'direct installeren, zonder popup' 'install right away, no popup' })"
-        "$(T 'Herstart             ' 'Restart              '): $restart"
-        "$(T 'Verwijderen          ' 'Uninstall            '): $(if ($d.UninstallNotify -eq $true) { T 'met meldingen' 'with notifications' } else { T 'zonder meldingen' 'without notifications' })"
-        "$(T 'Niemand ingelogd     ' 'Nobody signed in     '): $(if ($d.NoUserAction -eq 'Wachten') { T 'wachten tot er iemand is ingelogd' 'wait until someone signs in' } else { T 'direct installeren' 'install right away' })"
+        "Naam in popup        : $($d.AppName)"
+        "Versie               : $($d.Version)"
+        "Apps en onderdelen   : $($d.DetectName)"
+        "Detectie             : $(switch ("$($d.DetectionMethod)") { 'Bestand' { "bestand $($d.DetectFile)" } 'Register' { "register $($d.DetectRegKey)$(if ($d.DetectRegValue) { "\$($d.DetectRegValue)" })" } 'Script' { 'eigen script' } default { 'Apps en onderdelen' } })$(if ("$($d.DetectionMethod)" -ne 'Script') { if ("$($d.DetectVersion)" -eq '-') { ', geen versie' } elseif ($d.DetectVersion) { ", minimaal $($d.DetectVersion)" } else { ", minimaal $($d.Version)" } })"
+        "Processen            : $(@($d.Processes) -join ', ')"
+        "Kleur                : $($d.AccentColor)"
+        "Logo                 : $(if ($r.Icon) { 'aanwezig' } else { 'ontbreekt' })"
+        "Wie krijgt de update : $who"
+        "Uitstellen           : $($d.MaxPostpones) keer, telkens $($d.PostponeHours) uur"
+        "Geen keuze           : venster sluit na $timeout"
+        "Waarschuwing vooraf  : $($d.ForcedDelayMinutes) minuten na de laatste keer uitstellen"
+        "Tijdvenster          : $(Get-WindowText $d)"
+        "Inactief             : $(if ([int]("0$($d.IdleMinutes)") -gt 0) { "na $($d.IdleMinutes) minuten inactief of vergrendeld direct installeren" } else { 'uit' })"
+        "Autopilot            : $(if ($d.InstallDuringSetup -eq $false) { 'overslaan, de app komt na de inrichting' } else { 'direct installeren, zonder popup' })"
+        "Herstart             : $(switch ($d.RestartMode) { 'AlsNodig' { "alleen als de installer erom vraagt; Later = $($d.RestartReminderMinutes) min, verplicht na $(if ([int]("0$($d.RestartDeadlineHours)")) { "$($d.RestartDeadlineHours) uur" } else { 'nooit' })" } 'Altijd' { "altijd; Later = $($d.RestartReminderMinutes) min, verplicht na $(if ([int]("0$($d.RestartDeadlineHours)")) { "$($d.RestartDeadlineHours) uur" } else { 'nooit' })" } default { 'geen melding' } })"
+        "Verwijderen          : $(if ($d.UninstallNotify -eq $true) { 'met meldingen' } else { 'zonder meldingen' })"
+        "Niemand ingelogd     : $(if ($d.NoUserAction -eq 'Wachten') { 'wachten tot er iemand is ingelogd' } else { 'direct installeren' })"
     ) -join "`r`n"
     $comps = @($d.Components | Where-Object { $_ })
     if ($comps.Count)
     {
         $n = 0
-        $r.Summary += "`r`n`r`n$(T 'Onderdelen (in volgorde)' 'Components (in order)'):"
+        $r.Summary += "`r`n`r`nOnderdelen (in volgorde):"
         foreach ($c in $comps)
         {
             $n++
-            $r.Summary += "`r`n  $n. $($c.File)  [$($c.Kind)]$(if ($c.Main) { T '  (hoofdonderdeel)' '  (main component)' })"
-            $r.Summary += "`r`n     parameters : $(if ($c.Args) { $c.Args } else { T '(geen)' '(none)' })"
-            $r.Summary += "`r`n     $(T 'geslaagd bij exitcode' 'success on exit code'): $($c.Codes)"
+            $r.Summary += "`r`n  $n. $($c.File)  [$($c.Kind)]$(if ($c.Main) { '  (hoofdonderdeel)' })"
+            $r.Summary += "`r`n     parameters : $(if ($c.Args) { $c.Args } else { '(geen)' })"
+            $r.Summary += "`r`n     geslaagd bij exitcode: $($c.Codes)"
         }
-        if ("$($d.PreInstall)".Trim())  { $r.Summary += "`r`n`r`n$(T 'Voor de installatie' 'Before the installation'):`r`n$($d.PreInstall)" }
-        if ("$($d.PostInstall)".Trim()) { $r.Summary += "`r`n`r`n$(T 'Na de installatie' 'After the installation'):`r`n$($d.PostInstall)" }
+        if ("$($d.PreInstall)".Trim())  { $r.Summary += "`r`n`r`nVoor de installatie:`r`n$($d.PreInstall)" }
+        if ("$($d.PostInstall)".Trim()) { $r.Summary += "`r`n`r`nNa de installatie:`r`n$($d.PostInstall)" }
     }
 
     $parts = @()
@@ -841,87 +836,76 @@ function Get-VersionDetails
     {
         $p = Join-Path $bron $fname
         $parts += "==================== $fname ===================="
-        $parts += if (Test-Path $p) { [System.IO.File]::ReadAllText($p).TrimEnd() } else { T '(niet bewaard)' '(not kept)' }
+        $parts += if (Test-Path $p) { [System.IO.File]::ReadAllText($p).TrimEnd() } else { '(niet bewaard)' }
         $parts += ''
     }
     $ps = Join-Path $Path 'Intune\Install.ps1'
     if (Test-Path $ps)
     {
-        $parts += "==================== Intune\Install.ps1 ($(T 'PowerShell-installer' 'PowerShell installer')) ===================="
+        $parts += '==================== Intune\Install.ps1 (PowerShell-installer) ===================='
         $parts += [System.IO.File]::ReadAllText($ps).TrimEnd()
         $parts += ''
     }
     $r.Install = $parts -join "`r`n"
 
     $lines = @()
-    foreach ($lang in 'nl', 'en')
+    foreach ($k in $TextKeys)
     {
-        $lines += "==================== $(if ($lang -eq 'en') { T 'Engels' 'English' } else { T 'Nederlands' 'Dutch' }) ===================="
-        $section = if ($lang -eq 'en') { $d.TextsEn } else { $d.Texts }
-        $std = if ($lang -eq 'en') { $r.StdEn } else { $r.Std }
-        foreach ($k in $TextKeys)
-        {
-            $own = [bool]($section -and $section[$k])
-            $lines += "[$($TextLabels[$k])]  $(if ($own) { T '(eigen tekst)' '(own text)' } else { T '(standaardtekst)' '(standard text)' })"
-            $lines += (Get-EffectiveText $k $d $std -Language $lang)
-            $lines += ''
-        }
+        $own = [bool]($d.Texts -and $d.Texts[$k])
+        $lines += "[$($TextLabels[$k])]  $(if ($own) { '(eigen tekst)' } else { '(standaardtekst)' })"
+        $lines += (Get-EffectiveText $k $d $std)
+        $lines += ''
     }
     $r.Texts = $lines -join "`r`n"
 
-    $bi = Get-BuildPart $Path 'BuildInfo.txt'
-    $r.BuildInfo = if (Test-Path $bi) { [System.IO.File]::ReadAllText($bi) } else { T '(geen BuildInfo.txt)' '(no BuildInfo.txt)' }
+    $bi = Join-Path $Path 'Bouwinfo.txt'
+    $r.BuildInfo = if (Test-Path $bi) { [System.IO.File]::ReadAllText($bi) } else { '(geen Bouwinfo.txt)' }
     return $r
 }
 
 function Get-WindowText([hashtable]$d)
 {
-    $h = if ($d.WorkHours) { $d.WorkHours } else { '08:00-17:00' }
+    $h = if ($d.WorkHours) { "$($d.WorkHours)" -replace '\s*,\s*', ', ' } else { '08:00-17:00' }
     $w = if ($d.WorkDays) { $d.WorkDays } else { 'ma,di,wo,do,vr' }
     switch ($d.InstallWindow)
     {
-        'Werktijd'       { return (T "alleen binnen werktijd ($w, $h)" "only during working hours ($w, $h)") }
-        'BuitenWerktijd' { return (T "alleen buiten werktijd (buiten $w, $h)" "only outside working hours (outside $w, $h)") }
-        default          { return (T 'altijd' 'always') }
+        'Werktijd'       { return "alleen binnen de gekozen tijden ($w, $h)" }
+        'BuitenWerktijd' { return "alleen buiten de gekozen tijden (buiten $w, $h)" }
+        default          { return 'altijd' }
     }
 }
 
 function Compare-AppData
 {
-    # Short list of differences between an old version and what is now in the Builder
+    # Korte lijst met verschillen tussen een oude versie en wat nu in de Builder staat
     param ([hashtable]$Old, [hashtable]$New, [string]$OldInstall, [string]$NewInstall)
     $diff = @()
-    $labels = [ordered]@{ Version = (T 'Versie' 'Version'); AppName = (T 'Naam' 'Name'); DetectName = (T 'Apps en onderdelen' 'Apps & features'); AccentColor = (T 'Kleur' 'Colour')
-                          PopupLanguage = (T 'Taal popups' 'Popup language')
-                          MaxPostpones = (T 'Aantal keer uitstellen' 'Number of postpones'); PostponeHours = (T 'Uren per keer' 'Hours each time'); ForcedDelayMinutes = (T 'Waarschuwing (min)' 'Warning (min)')
-                          InstallWindow = (T 'Tijdvenster' 'Time window'); WorkHours = (T 'Werktijd' 'Working hours'); WorkDays = (T 'Werkdagen' 'Working days'); IdleMinutes = (T 'Inactief (min)' 'Idle (min)'); NoUserAction = (T 'Niemand ingelogd' 'Nobody signed in')
-                          RestartMode = (T 'Herstart' 'Restart'); RestartReminderMinutes = (T 'Herstart: Later (min)' 'Restart: Later (min)'); RestartDeadlineHours = (T 'Herstart: verplicht na (uur)' 'Restart: mandatory after (hours)'); RestartWarningMinutes = (T 'Herstart: waarschuwing (min)' 'Restart: warning (min)'); UninstallNotify = (T 'Meldingen bij verwijderen' 'Notifications when removing') }
+    $labels = [ordered]@{ Version = 'Versie'; AppName = 'Naam'; DetectName = 'Apps en onderdelen'; AccentColor = 'Kleur'
+                          MaxPostpones = 'Aantal keer uitstellen'; PostponeHours = 'Uren per keer'; ForcedDelayMinutes = 'Waarschuwing (min)'
+                          InstallWindow = 'Tijdvenster'; WorkHours = 'Tijden'; WorkDays = 'Werkdagen'; IdleMinutes = 'Inactief (min)'; NoUserAction = 'Niemand ingelogd'
+                          RestartMode = 'Herstart'; RestartReminderMinutes = 'Herstart: Later (min)'; RestartDeadlineHours = 'Herstart: verplicht na (uur)'; RestartWarningMinutes = 'Herstart: waarschuwing (min)'; UninstallNotify = 'Meldingen bij verwijderen' }
     foreach ($k in $labels.Keys)
     {
         if ("$($Old[$k])" -ne "$($New[$k])") { $diff += "$($labels[$k]): $($Old[$k])  ->  $($New[$k])" }
     }
-    if ((@($Old.Processes) -join ',') -ne (@($New.Processes) -join ',')) { $diff += "$(T 'Processen' 'Processes'): $(@($Old.Processes) -join ', ')  ->  $(@($New.Processes) -join ', ')" }
-    if ([bool]$Old.OnlyUpdateExisting -ne [bool]$New.OnlyUpdateExisting) { $diff += T 'Wie krijgt de update: gewijzigd' 'Who gets the update: changed' }
-    if (($Old.InstallDuringSetup -ne $false) -ne ($New.InstallDuringSetup -ne $false)) { $diff += "$(T 'Installeren tijdens Autopilot' 'Install during Autopilot'): $(if ($New.InstallDuringSetup -ne $false) { T 'aan' 'on' } else { T 'uit' 'off' })" }
+    if ((@($Old.Processes) -join ',') -ne (@($New.Processes) -join ',')) { $diff += "Processen: $(@($Old.Processes) -join ', ')  ->  $(@($New.Processes) -join ', ')" }
+    if ([bool]$Old.OnlyUpdateExisting -ne [bool]$New.OnlyUpdateExisting) { $diff += 'Wie krijgt de update: gewijzigd' }
+    if (($Old.InstallDuringSetup -ne $false) -ne ($New.InstallDuringSetup -ne $false)) { $diff += "Installeren tijdens Autopilot: $(if ($New.InstallDuringSetup -ne $false) { 'aan' } else { 'uit' })" }
     $fmt = { param($list) (@($list | Where-Object { $_ } | ForEach-Object { "$($_.File)|$($_.Args)|$($_.Codes)|$([bool]$_.Main)" }) -join ';') }
     if ((& $fmt $Old.Components) -ne (& $fmt $New.Components))
     {
         $oldF = @($Old.Components | Where-Object { $_ } | ForEach-Object { $_.File }) -join ', '
         $newF = @($New.Components | Where-Object { $_ } | ForEach-Object { $_.File }) -join ', '
-        $diff += if ($oldF -ne $newF) { "$(T 'Onderdelen' 'Components'): $oldF  ->  $newF" } else { T 'Parameters of exitcodes van onderdelen gewijzigd' 'Parameters or exit codes of components changed' }
+        $diff += if ($oldF -ne $newF) { "Onderdelen: $oldF  ->  $newF" } else { 'Parameters of exitcodes van onderdelen gewijzigd' }
     }
-    foreach ($section in 'Texts', 'TextsEn')
+    foreach ($k in $TextKeys)
     {
-        $suffix = if ($section -eq 'TextsEn') { T ' (Engels)' ' (English)' } else { T ' (Nederlands)' ' (Dutch)' }
-        foreach ($k in $TextKeys)
-        {
-            $o = if ($Old[$section]) { "$($Old[$section][$k])" } else { '' }
-            $n = if ($New[$section]) { "$($New[$section][$k])" } else { '' }
-            if ($o.Trim() -ne $n.Trim()) { $diff += "$(T 'Tekst gewijzigd' 'Text changed'): $($TextLabels[$k])$suffix" }
-        }
+        $o = if ($Old.Texts) { "$($Old.Texts[$k])" } else { '' }
+        $n = if ($New.Texts) { "$($New.Texts[$k])" } else { '' }
+        if ($o.Trim() -ne $n.Trim()) { $diff += "Tekst gewijzigd: $($TextLabels[$k])" }
     }
     $norm = { param($s) (("$s" -replace "`r", '').Trim()) }
-    if ($OldInstall -and (& $norm $OldInstall) -ne (& $norm $NewInstall)) { $diff += T 'Installatiestappen (install-app.cmd) gewijzigd' 'Installation steps (install-app.cmd) changed' }
+    if ($OldInstall -and (& $norm $OldInstall) -ne (& $norm $NewInstall)) { $diff += 'Installatiestappen (install-app.cmd) gewijzigd' }
     return $diff
 }
 
@@ -929,220 +913,90 @@ function Test-AppData
 {
     param ([hashtable]$d)
     $e = @()
-    if ($d.AppId -notmatch '^[A-Za-z0-9_-]+$')        { $e += T 'AppId: alleen letters, cijfers, - en _ (geen spaties).' 'AppId: only letters, digits, - and _ (no spaces).' }
-    if (-not $d.AppName)                               { $e += T 'Naam is leeg.' 'Name is empty.' }
-    if ($d.Version -notmatch '^\d+(\.\d+){0,3}$')      { $e += T 'Versie moet de vorm 1.2.3 hebben.' 'Version must have the form 1.2.3.' }
-    if (-not $d.DetectName)                            { $e += T 'Naam in Apps en onderdelen is leeg.' 'Name in Apps & features is empty.' }
-    if ($d.AccentColor -notmatch '^#[0-9A-Fa-f]{6}$')  { $e += T 'Kleur moet de vorm #RRGGBB hebben.' 'Colour must have the form #RRGGBB.' }
-    if ($d.AutoInstallSteps -and -not @($d.Components | Where-Object { $_ }).Count) { $e += T 'Voeg in tabblad 2 minstens één onderdeel toe (of zet automatisch maken uit).' 'Add at least one component in tab 2 (or switch off create automatically).' }
+    if ($d.AppId -notmatch '^[A-Za-z0-9_-]+$')        { $e += 'AppId: alleen letters, cijfers, - en _ (geen spaties).' }
+    if (-not $d.AppName)                               { $e += 'Naam is leeg.' }
+    if ($d.Version -notmatch '^\d+(\.\d+){0,3}$')      { $e += 'Versie moet de vorm 1.2.3 hebben.' }
+    if (-not $d.DetectName)                            { $e += 'Naam in Apps en onderdelen is leeg.' }
+    switch ("$($d.DetectionMethod)")
+    {
+        'Bestand'  { if (-not $d.DetectFile)   { $e += 'Detectie: vul het bestand in (bijv. %ProgramFiles%\Remote help\RemoteHelp.exe).' } }
+        'Register' { if (-not $d.DetectRegKey) { $e += 'Detectie: vul de registersleutel in.' } }
+        'Script'   {
+            if (-not "$($d.DetectScript)".Trim()) { $e += 'Detectie: het eigen detectiescript is leeg.' }
+            else { $pe = $null; [System.Management.Automation.Language.Parser]::ParseInput("$($d.DetectScript)", [ref]$null, [ref]$pe) | Out-Null; if ($pe) { $e += "Detectie: fout in het eigen script, regel $($pe[0].Extent.StartLineNumber): $($pe[0].Message)" } }
+        }
+    }
+    if ("$($d.DetectVersion)" -and "$($d.DetectVersion)" -ne '-' -and "$($d.DetectVersion)" -notmatch '^\d+(\.\d+){0,3}$') { $e += 'Detectie: de minimale versie moet de vorm 1.2.3 hebben.' }
+    if ($d.AccentColor -notmatch '^#[0-9A-Fa-f]{6}$')  { $e += 'Kleur moet de vorm #RRGGBB hebben.' }
+    # Pakketmap: bij opslaan mag hij nog leeg zijn of nog niet bestaan; bij bouwen is hij verplicht (Confirm-OutputFolder)
+    if ("$($d.OutputFolder)".Trim())
+    {
+        $of = [Environment]::ExpandEnvironmentVariables("$($d.OutputFolder)")
+        if ($of -notmatch '^([A-Za-z]:\\|\\\\)') { $e += "Pakket opslaan in: gebruik een volledig pad, bijv. I:\...\intune-package (nu: $($d.OutputFolder))." }
+    }
+    if ($d.AutoInstallSteps -and -not @($d.Components | Where-Object { $_ }).Count) { $e += 'Voeg in tabblad 2 minstens één onderdeel toe (of zet automatisch maken uit).' }
     if ($d.InstallWindow -and $d.InstallWindow -ne 'Altijd')
     {
-        if ($d.WorkHours -notmatch '^([01]?\d|2[0-3]):[0-5]\d-([01]?\d|2[0-3]):[0-5]\d$') { $e += T 'Werktijd moet de vorm 08:00 tot 17:00 hebben.' 'Working hours must have the form 08:00 to 17:00.' }
-        elseif (($d.WorkHours -split '-')[0] -eq ($d.WorkHours -split '-')[1]) { $e += T 'Werktijd: begin en einde zijn gelijk.' 'Working hours: start and end are the same.' }
-        if (-not "$($d.WorkDays)".Trim()) { $e += T 'Kies minstens één werkdag.' 'Pick at least one working day.' }
+        $blocks = @("$($d.WorkHours)" -split ',' | Where-Object { $_ })
+        if (-not $blocks.Count) { $e += 'Vul minstens één tijdblok in, bijv. 08:00-17:00.' }
+        foreach ($b in $blocks)
+        {
+            if ($b -notmatch '^([01]?\d|2[0-3]):[0-5]\d-([01]?\d|2[0-3]):[0-5]\d$') { $e += "Tijden: '$b' moet de vorm 08:00-17:00 hebben. Meerdere blokken scheid je met een komma." }
+            elseif (($b -split '-')[0] -eq ($b -split '-')[1]) { $e += "Tijden: in '$b' zijn begin en einde gelijk." }
+        }
+        if (-not "$($d.WorkDays)".Trim()) { $e += 'Kies minstens één werkdag.' }
     }
-    if ("$($d.IdleMinutes)" -notmatch '^\d+$') { $e += T 'Minuten inactief moet een heel getal zijn.' 'Idle minutes must be a whole number.' }
+    if ("$($d.IdleMinutes)" -notmatch '^\d+$') { $e += 'Minuten inactief moet een heel getal zijn.' }
     if ($d.RestartMode -and $d.RestartMode -ne 'Nooit')
     {
-        if ("$($d.RestartReminderMinutes)" -notmatch '^\d+$' -or [int]$d.RestartReminderMinutes -lt 15) { $e += T 'Herstart: opnieuw vragen na moet minstens 15 minuten zijn.' 'Restart: ask again after must be at least 15 minutes.' }
-        if ("$($d.RestartDeadlineHours)" -notmatch '^\d+$')  { $e += T 'Herstart: verplicht na (uur) moet een heel getal zijn (0 = nooit).' 'Restart: mandatory after (hours) must be a whole number (0 = never).' }
-        if ("$($d.RestartWarningMinutes)" -notmatch '^\d+$' -or [int]$d.RestartWarningMinutes -lt 1) { $e += T 'Herstart: waarschuwing vooraf moet minstens 1 minuut zijn.' 'Restart: warning in advance must be at least 1 minute.' }
+        if ("$($d.RestartReminderMinutes)" -notmatch '^\d+$' -or [int]$d.RestartReminderMinutes -lt 15) { $e += 'Herstart: opnieuw vragen na moet minstens 15 minuten zijn.' }
+        if ("$($d.RestartDeadlineHours)" -notmatch '^\d+$')  { $e += 'Herstart: verplicht na (uur) moet een heel getal zijn (0 = nooit).' }
+        if ("$($d.RestartWarningMinutes)" -notmatch '^\d+$' -or [int]$d.RestartWarningMinutes -lt 1) { $e += 'Herstart: waarschuwing vooraf moet minstens 1 minuut zijn.' }
     }
     foreach ($n in 'MaxPostpones', 'PostponeHours', 'ConsentTimeoutMinutes', 'ForcedDelayMinutes')
     {
-        if ("$($d[$n])" -notmatch '^\d+$') { $e += T "$n moet een heel getal zijn." "$n must be a whole number." }
+        if ("$($d[$n])" -notmatch '^\d+$') { $e += "$n moet een heel getal zijn." }
     }
     return $e
 }
 
 #endregion
 
-# ---------- English interface: XAML texts are translated before the window is loaded ----------
-$UiTextEn = @{
-    # by element name (same Dutch text, different meaning)
-    'name:BtnCompRemove' = 'Remove'
-    'name:BtnVerDelete'  = 'Delete'
-    'tag:uninstalling'   = 'Removing'
-    'tag:installing'     = 'Installing'
-    # by text
-    'Vul de gegevens in, bekijk de popup en bouw het Intune-pakket.' = 'Fill in the details, preview the popup and build the Intune package.'
-    'Taal van de Builder en van de gemaakte bestanden' = 'Language of the Builder and of the generated files'
-    'Opslaan' = 'Save'
-    'Map met pakket openen' = 'Open package folder'
-    'Bouw pakket (.intunewin)' = 'Build package (.intunewin)'
-    '+ Nieuwe app' = '+ New app'
-    '1. Basis' = '1. Basics'
-    'Kiezen...' = 'Browse...'
-    'Kies de installer (.exe of .msi). Naam, versie en stille parameters worden dan automatisch ingevuld.' = 'Pick the installer (.exe or .msi). Name, version and silent parameters are then filled in automatically.'
-    'AppId (interne naam, geen spaties)' = 'AppId (internal name, no spaces)'
-    'Naam in de popup' = 'Name in the popup'
-    'Versie' = 'Version'
-    'De versie die dit pakket installeert; Intune detecteert hierop.' = 'The version this package installs; Intune detects on this.'
-    'Naam in Apps en onderdelen (begint met)' = 'Name in Apps & features (starts with)'
-    'Processen die dicht moeten zijn' = 'Processes that must be closed'
-    'Zonder .exe, gescheiden door komma''s. Bijv.: notepad++   of   vmware-view, horizon-client. Leeg = geen procescheck (voor apps zonder eigen programma, zoals een runtime of driver).' = 'Without .exe, separated by commas. E.g.: notepad++   or   vmware-view, horizon-client. Empty = no process check (for apps without their own program, such as a runtime or driver).'
-    'Alleen bijwerken op apparaten waar de app al staat' = 'Only update devices where the app is already installed'
-    'Installeren op nieuwe laptops (Autopilot), zonder popup' = 'Install on new laptops (Autopilot), without popup'
-    'Tijdens de inrichting wordt de app direct geïnstalleerd, ook als hij er nog niet op staat. Uit = de app komt pas na de inrichting, met popup.' = 'During setup the app is installed right away, even when it is not on the laptop yet. Off = the app comes after setup, with popup.'
-    'Logo kiezen...' = 'Choose logo...'
-    'Uit installer halen' = 'Extract from installer'
-    '.svg, .ico, .png of .jpg (wordt omgezet). Liefst vierkant en minstens 256x256.' = '.svg, .ico, .png or .jpg (converted). Preferably square and at least 256x256.'
-    'Kleur van kop en knop' = 'Colour of header and button'
-    'Vorm #RRGGBB, bijv. #185FA5 (blauw) of #3B7A1E (groen).' = 'Format #RRGGBB, e.g. #185FA5 (blue) or #3B7A1E (green).'
-    'Taal van de popups' = 'Popup language'
-    'Automatisch (Windows-taal van de gebruiker)' = 'Automatic (user''s Windows language)'
-    'Altijd Nederlands' = 'Always Dutch'
-    'Altijd Engels' = 'Always English'
-    'Engelse Windows = Engelse popups, anders Nederlands. De teksten staan in tabblad 3.' = 'English Windows = English popups, otherwise Dutch. The texts are in tab 3.'
-    '2. Installatie' = '2. Installation'
-    'Onderdelen (worden in deze volgorde geïnstalleerd)' = 'Components (installed in this order)'
-    'Bijv. eerst een runtime, dan de app zelf. Per onderdeel eigen parameters (dubbelklik om te wijzigen) en de exitcodes die als geslaagd tellen. Mislukt een onderdeel, dan stopt de installatie en krijgt de gebruiker de melding ''niet gelukt''. Het hoofdonderdeel is de app zelf (gebruikt voor verwijderen).' = 'E.g. first a runtime, then the app itself. Each component has its own parameters (double-click to change) and the exit codes that count as success. When a component fails, the installation stops and the user gets the ''failed'' notification. The main component is the app itself (used for uninstalling).'
-    'Hoofd' = 'Main'
-    'Bestand' = 'File'
-    'Geslaagd bij exitcode' = 'Success on exit code'
-    'Onderdeel toevoegen...' = 'Add component...'
-    'Omhoog' = 'Up'
-    'Omlaag' = 'Down'
-    'Ondersteund: .exe, .msi, .msp, .ps1, .cmd/.bat en .reg. Stille parameters worden voorgesteld.' = 'Supported: .exe, .msi, .msp, .ps1, .cmd/.bat and .reg. Silent parameters are suggested.'
-    'Extra stappen vóór de onderdelen' = 'Extra steps before the components'
-    'Extra stappen na de onderdelen' = 'Extra steps after the components'
-    'Parameters uit Intune gebruiken: install.cmd /noshortcuts maakt APP_NOSHORTCUTS aan. Een stap overslaan doe je zo: ''if defined APP_NOSHORTCUTS goto na_snelkoppelingen'', met '':na_snelkoppelingen'' na die stap. Ingebouwd zijn /noprocesscheck, /noconsent en /silent.' = 'Using parameters from Intune: install.cmd /noshortcuts creates APP_NOSHORTCUTS (with Install.ps1: $Switches). To skip a step: ''if defined APP_NOSHORTCUTS goto after_shortcuts'', with '':after_shortcuts'' after that step. Built in: /noprocesscheck, /noconsent and /silent.'
-    'Installatiestappen automatisch maken uit de onderdelen' = 'Create the installation steps automatically from the components'
-    'Installatiestappen (install-app.cmd)' = 'Installation steps (install-app.cmd)'
-    'Draait als SYSTEM vanuit de pakketmap. Staat automatisch maken aan, dan zie je hier het resultaat; zet het uit om alles met de hand te schrijven.' = 'Runs as SYSTEM from the package folder. With create automatically on, you see the result here; switch it off to write everything by hand.'
-    'Verwijderstappen opnieuw maken' = 'Recreate uninstall steps'
-    'Verwijderstappen (uninstall-app.cmd)' = 'Uninstall steps (uninstall-app.cmd)'
-    'Draait als SYSTEM vanuit de pakketmap. Lukt verwijderen via de setup.exe niet, gebruik dan: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "naam in Apps en onderdelen"' = 'Runs as SYSTEM from the package folder. If removing through the setup.exe does not work, use: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Remove-App.ps1" -Name "name in Apps & features"'
-    'Bestanden in het pakket' = 'Files in the package'
-    'Alles in deze lijst gaat mee in het .intunewin-pakket (installers, logo, configuratie, eigen scripts).' = 'Everything in this list goes into the .intunewin package (installers, logo, configuration, own scripts).'
-    'Bestanden toevoegen...' = 'Add files...'
-    'Geselecteerde verwijderen' = 'Remove selected'
-    'Map openen' = 'Open folder'
-    '3. Teksten' = '3. Texts'
-    'Teksten voor deze app en versie, in het Nederlands en het Engels. Laat een veld leeg voor de standaardtekst (grijs eronder). Gebruikers met Engelse Windows krijgen de Engelse teksten (zie Taal van de popups in tabblad 1). Staat de app nog niet op de laptop, dan gelden de teksten "Nieuwe installatie" (onderaan). Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken (Engels: {Version}, {Minutes}, {MaxPostpones}); die worden automatisch ingevuld.' = 'Texts for this app and version, in Dutch and English. Leave a field empty for the standard text (grey below it). Users with English Windows get the English texts (see Popup language in tab 1). When the app is not on the laptop yet, the "New installation" texts (at the bottom) apply. You can use {Version}, {Minutes} and {MaxPostpones} (Dutch: {Versie}, {Minuten}, {MaxUitstel}) and {AppName}; they are filled in automatically.'
-    'Teksten en voorbeelden in' = 'Texts and previews in'
-    'Nederlands' = 'Dutch'
-    'Engels' = 'English'
-    'Standaardteksten voor alle apps bewerken...' = 'Edit standard texts for all apps...'
-    'Voorbeelden tonen als nieuwe installatie (de app staat nog niet op de laptop)' = 'Show previews as a new installation (the app is not on the laptop yet)'
-    'Voorbeeld: Update beschikbaar' = 'Preview: update available'
-    'Voorbeeld: laatste keer' = 'Preview: last time'
-    'Voorbeeld: waarschuwing' = 'Preview: warning'
-    'Voorbeeld: installeren' = 'Preview: installing'
-    'Voorbeeld: geslaagd' = 'Preview: success'
-    'Voorbeeld: mislukt' = 'Preview: failed'
-    'Voorbeeld: herstart' = 'Preview: restart'
-    'Voorbeeld: verplichte herstart' = 'Preview: mandatory restart'
-    'Voorbeeld: verwijderen' = 'Preview: removing'
-    'Voorbeeld: verwijderd' = 'Preview: removed'
-    '4. Uitstellen' = '4. Postponing'
-    'Hoe vaak mag de gebruiker uitstellen?' = 'How often may the user postpone?'
-    'Hoe lang duurt een keer uitstellen? (uren)' = 'How long is one postpone? (hours)'
-    'Waarschuwing na de laatste keer (minuten)' = 'Warning after the last postpone (minutes)'
-    '0 = meteen installeren, zonder waarschuwing.' = '0 = install right away, without warning.'
-    'Geen keuze gemaakt: venster sluiten na (minuten)' = 'No choice made: close the popup after (minutes)'
-    'Daarna wordt het later opnieuw gevraagd; dit telt niet als uitstellen.' = 'It is then asked again later; this does not count as a postpone.'
-    'Wanneer mag de update komen?' = 'When may the update come?'
-    'Tijdvenster' = 'Time window'
-    'Altijd' = 'Always'
-    'Alleen binnen werktijd' = 'Only during working hours'
-    'Alleen buiten werktijd (avond, nacht, weekend)' = 'Only outside working hours (evening, night, weekend)'
-    'Werktijd van' = 'Working hours from'
-    'tot' = 'to'
-    'ma' = 'Mon'; 'di' = 'Tue'; 'wo' = 'Wed'; 'do' = 'Thu'; 'vr' = 'Fri'; 'za' = 'Sat'; 'zo' = 'Sun'
-    'Direct installeren, zonder popup, als de gebruiker' = 'Install right away, without popup, when the user has been idle for'
-    'minuten niets doet of het scherm vergrendeld is' = 'minutes or the screen is locked'
-    'Handig voor apps die je liever installeert als iemand weg is, bijvoorbeeld tijdens de lunch. De app moet wel dicht zijn; staat hij open, dan wacht de installatie gewoon.' = 'Useful for apps you prefer to install while someone is away, for example during lunch. The app must be closed; when it is open, the installation simply waits.'
-    'Niemand ingelogd' = 'Nobody signed in'
-    'Direct installeren (ook buiten het tijdvenster)' = 'Install right away (also outside the time window)'
-    'Wachten tot er iemand is ingelogd' = 'Wait until someone signs in'
-    'Direct installeren is ook nodig voor nieuwe laptops via Autopilot: dan is er nog niemand ingelogd.' = 'Install right away is also needed for new laptops through Autopilot: nobody is signed in yet.'
-    'Herstart na de installatie' = 'Restart after the installation'
-    'Herstartmelding tonen' = 'Show restart prompt'
-    'Nooit' = 'Never'
-    'Alleen als de installer erom vraagt (3010/1641)' = 'Only when the installer asks for it (3010/1641)'
-    'Altijd na de installatie' = 'Always after the installation'
-    'Later: opnieuw vragen na (min)' = 'Later: ask again after (min)'
-    'Verplicht herstarten na (uur)' = 'Mandatory restart after (hours)'
-    '0 = nooit verplicht.' = '0 = never mandatory.'
-    'Waarschuwing vooraf (min)' = 'Warning in advance (min)'
-    'Na een geslaagde installatie krijgt de gebruiker een venster met Nu herstarten en Later. Na de deadline volgt een waarschuwing met aftelklok en wordt de laptop herstart. Is niemand ingelogd, dan herstart de laptop direct. Intune krijgt dan exitcode 0, zodat er geen tweede herstartmelding komt. Tijdens Autopilot regelt de inrichtingspagina de herstart.' = 'After a successful installation the user gets a popup with Restart now and Later. After the deadline a warning with countdown follows and the laptop restarts. When nobody is signed in, the laptop restarts right away. Intune then gets exit code 0, so there is no second restart prompt. During Autopilot the setup page (ESP) handles the restart.'
-    'Verwijderen' = 'Uninstall'
-    'Meldingen tonen als de app via Intune wordt verwijderd' = 'Show notifications when the app is removed through Intune'
-    'Rechtsonder: ''... wordt verwijderd'' met voortgangsbalk, daarna ''... is verwijderd'' (groen) of ''Verwijderen niet gelukt'' (rood). De teksten pas je aan in tabblad 3.' = 'Bottom right: ''Removing ...'' with a progress bar, then ''... has been removed'' (green) or ''Removal failed'' (red). You change the texts in tab 3.'
-    '5. Versies' = '5. Versions'
-    'Alle builds blijven bewaard, ook eerdere builds van dezelfde versie (vervangen). Klik op een build om te zien hoe die gemaakt is; met Kopie maken en aanpassen ga je er verder mee.' = 'All builds are kept, also earlier builds of the same version (replaced). Click a build to see how it was made; with Copy and edit you continue from it.'
-    'Kopie maken en aanpassen' = 'Copy and edit'
-    'Gebouwd' = 'Built'
-    'Pakket' = 'Package'
-    'Kies links een versie' = 'Pick a version on the left'
-    'Update beschikbaar' = 'Update available'
-    'Laatste keer uitstellen' = 'Last postpone'
-    'Waarschuwing' = 'Warning'
-    'Geslaagd' = 'Success'
-    'Mislukt' = 'Failed'
-    'Herstart' = 'Restart'
-    'Verplichte herstart' = 'Mandatory restart'
-    'Verwijderd' = 'Removed'
-    'Voorbeeld van deze versie' = 'Preview this version'
-    'Overzicht' = 'Overview'
-    'Installatiestappen' = 'Installation steps'
-    'Teksten' = 'Texts'
-    'Bouwinfo' = 'Build info'
-    'Resultaat' = 'Result'
-    # standard texts window
-    'Standaardteksten voor alle apps' = 'Standard texts for all apps'
-    'Deze teksten gebruikt elke app, tenzij je bij een app in tabblad 3 een eigen tekst invult. Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken (Engels: {Version}, {Minutes}, {MaxPostpones}). Bouw de pakketten daarna opnieuw.' = 'Every app uses these texts, unless you fill in its own text in tab 3. You can use {AppName}, {Version}, {Minutes} and {MaxPostpones} (Dutch: {Versie}, {Minuten}, {MaxUitstel}). Build the packages again afterwards.'
-    'Taal' = 'Language'
-    'Ingebouwde teksten terugzetten' = 'Restore built-in texts'
-    'Annuleren' = 'Cancel'
-}
-
-function Convert-XamlLanguage
+function Get-DetectionScriptText([hashtable]$d)
 {
-    # Returns the XAML text with the Dutch texts replaced by English (only when the Builder language is English).
-    # Works on the text and returns text: Windows PowerShell 5.1 does not reliably pass an XmlDocument
-    # through a function (it enumerates its child nodes), so no XmlDocument goes in or out.
-    param ([string]$Text)
-    if ($script:Lang -ne 'en') { return $Text }
-    $doc = New-Object System.Xml.XmlDocument
-    $doc.PreserveWhitespace = $true
-    $doc.LoadXml($Text)
-    $attrs = 'Content', 'Text', 'Header', 'Title', 'ToolTip'
-    foreach ($el in @($doc.SelectNodes('//*')))
-    {
-        $name = $el.GetAttribute('Name')
-        $byName = if ($name) { $UiTextEn["name:$name"] } else { $null }
-        $tag = $el.GetAttribute('Tag')
-        $byTag  = if ($el.LocalName -eq 'ComboBoxItem' -and $tag) { $UiTextEn["tag:$tag"] } else { $null }
-        foreach ($a in $attrs)
-        {
-            $v = $el.GetAttribute($a)
-            if (-not $v) { continue }
-            if ($a -eq 'Content' -and $byName) { $el.SetAttribute($a, $byName); continue }
-            if ($a -eq 'Content' -and $byTag)  { $el.SetAttribute($a, $byTag);  continue }
-            if ($UiTextEn.ContainsKey($v)) { $el.SetAttribute($a, [string]$UiTextEn[$v]) }
-        }
-        # <TextBlock>text</TextBlock>
-        foreach ($child in @($el.ChildNodes))
-        {
-            if ($child.NodeType -eq [System.Xml.XmlNodeType]::Text)
-            {
-                $v = $child.Value.Trim()
-                if ($UiTextEn.ContainsKey($v)) { $child.Value = [string]$UiTextEn[$v] }
-            }
-        }
-    }
-    return [string]$doc.OuterXml
+    # Het detectiescript zoals de build het maakt (voor 'Testen op deze pc')
+    if ($d.DetectionMethod -eq 'Script') { return "$($d.DetectScript)" }
+    $ver = if ("$($d.DetectVersion)".Trim()) { "$($d.DetectVersion)".Trim() } else { "$($d.Version)" }
+    if ($ver -eq '-') { $ver = '' }
+    $q = { param($v) "$v".Replace("'", "''") }
+    return ([System.IO.File]::ReadAllText((Join-Path $KitDir 'Intune\Detection.ps1'))).
+        Replace('{{APPNAME}}', $d.AppName).Replace('{{DETECT_METHOD}}', $(if ($d.DetectionMethod) { $d.DetectionMethod } else { 'AppsEnOnderdelen' })).
+        Replace('{{DETECT_NAME}}', (& $q $d.DetectName)).Replace('{{DETECT_VERSION}}', (& $q $ver)).
+        Replace('{{DETECT_FILE}}', (& $q $d.DetectFile)).Replace('{{DETECT_REGKEY}}', (& $q $d.DetectRegKey)).Replace('{{DETECT_REGVALUE}}', (& $q $d.DetectRegValue))
 }
 
-if ($env:APPKIT_NOGUI) { return }   # for tests: only load the functions
+if ($env:APPKIT_NOGUI) { return }   # voor tests: alleen de functies laden
 
-#region ===================== Window =====================
+#region ===================== Venster =====================
+
+# Scherp op schermen met schaal 125%/150%/200%: Windows laten weten dat de Builder zelf schaalt.
+# Zonder dit vergroot Windows het venster als plaatje en wordt het wazig. Moet vóór het eerste venster.
+try
+{
+    Add-Type -Namespace AppKit -Name Dpi -ErrorAction Stop -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(System.IntPtr value);
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+'@
+    # -2 = DPI_AWARENESS_CONTEXT_SYSTEM_AWARE (Windows 10 1703+); anders de oudere aanroep
+    $dpiOk = $false
+    try { $dpiOk = [AppKit.Dpi]::SetProcessDpiAwarenessContext([System.IntPtr]::new(-2)) } catch { }
+    if (-not $dpiOk) { [void][AppKit.Dpi]::SetProcessDPIAware() }
+}
+catch { }
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Microsoft.VisualBasic
 
-# Own identity in the taskbar, so Windows shows the Builder icon and not the PowerShell one
+# Eigen identiteit in de taakbalk, zodat Windows het Builder-icoon toont en niet dat van PowerShell
 try
 {
     Add-Type -Namespace AppKit -Name Shell -MemberDefinition '[DllImport("shell32.dll")] public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string id);'
@@ -1150,8 +1004,33 @@ try
 }
 catch { }
 $BuilderIcon = Join-Path $KitDir 'Builder.ico'
+$BuilderIconKit = $BuilderIcon   # voor de snelkoppeling in de kit-map (ook voor andere gebruikers)
+# Vanaf een netwerkschijf (bijv. I:\apps) laadt Windows het icoon niet altijd: lokale kopie in het eigen profiel gebruiken
+try
+{
+    $localIconDir = Join-Path $env:LOCALAPPDATA 'AppUpdateKit'
+    if (-not (Test-Path $localIconDir)) { New-Item -Path $localIconDir -ItemType Directory -Force | Out-Null }
+    $localIcon = Join-Path $localIconDir 'Builder.ico'
+    if ((Test-Path $BuilderIcon) -and (-not (Test-Path $localIcon) -or (Get-Item $localIcon).Length -ne (Get-Item $BuilderIcon).Length))
+    {
+        Copy-Item -LiteralPath $BuilderIcon -Destination $localIcon -Force
+    }
+    if (Test-Path $localIcon) { $BuilderIcon = $localIcon }
+}
+catch { }
 
-# Row in the components table
+function Get-BuilderIconImage
+{
+    # Icoon uit de bytes laden (niet via een bestandsadres): werkt ook vanaf een netwerkschijf
+    try
+    {
+        $ms = New-Object System.IO.MemoryStream (, [System.IO.File]::ReadAllBytes($BuilderIcon))
+        return [System.Windows.Media.Imaging.BitmapFrame]::Create($ms, [System.Windows.Media.Imaging.BitmapCreateOptions]::None, [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+    }
+    catch { return $null }
+}
+
+# Rij in de onderdelen-tabel
 if (-not ('AppKit.Component' -as [type]))
 {
     Add-Type -TypeDefinition @"
@@ -1168,23 +1047,24 @@ namespace AppKit {
 "@
 }
 
-# Error during start-up (before the window exists): still show a message
+# Fout bij het opstarten (voordat het venster er is): toch een melding geven
 trap
 {
-    $log = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-errors.log'
+    $log = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-fouten.log'
     Add-Content -Path $log -Value "$(Get-Date)`r`n$($_ | Out-String)" -ErrorAction SilentlyContinue
-    [void][System.Windows.MessageBox]::Show("$(T 'De Builder kon niet starten' 'The Builder could not start'):`n`n$($_.Exception.Message)`n`nDetails: $log", 'AppUpdateKit Builder', 'OK', 'Error')
+    [void][System.Windows.MessageBox]::Show("De Builder kon niet starten:`n`n$($_.Exception.Message)`n`nDetails: $log", 'AppUpdateKit Builder', 'OK', 'Error')
     exit 1
 }
 
-$xamlText = @'
+[xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="AppUpdateKit Builder" Width="1060" Height="760" MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8">
+        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
   <Window.Resources>
     <Style TargetType="TextBox">
-      <Setter Property="Padding" Value="6,4"/>
+      <Setter Property="Padding" Value="6,6"/>
       <Setter Property="Margin" Value="0,2,0,8"/>
       <Setter Property="BorderBrush" Value="#C8CCD2"/>
     </Style>
@@ -1198,6 +1078,10 @@ $xamlText = @'
       <Setter Property="FontSize" Value="11.5"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="Margin" Value="0,-4,0,8"/>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Padding" Value="8,6,6,6"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
     <Style TargetType="Button">
       <Setter Property="Padding" Value="12,6"/>
@@ -1225,19 +1109,10 @@ $xamlText = @'
   <DockPanel>
     <!-- Kop -->
     <Border DockPanel.Dock="Top" Background="#185FA5" Padding="18,12">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Text="Taal / Language" Foreground="#D6E6F7" VerticalAlignment="Center" Margin="0,0,8,0"/>
-          <ComboBox Name="CmbUiLang" Width="120" ToolTip="Taal van de Builder en van de gemaakte bestanden">
-            <ComboBoxItem Tag="nl" Content="Nederlands"/>
-            <ComboBoxItem Tag="en" Content="English"/>
-          </ComboBox>
-        </StackPanel>
-        <StackPanel>
-          <TextBlock Text="AppUpdateKit Builder" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
-          <TextBlock Text="Vul de gegevens in, bekijk de popup en bouw het Intune-pakket." Foreground="#D6E6F7"/>
-        </StackPanel>
-      </DockPanel>
+      <StackPanel>
+        <TextBlock Text="AppUpdateKit Builder" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock Text="Vul de gegevens in, bekijk de popup en bouw het Intune-pakket." Foreground="#D6E6F7"/>
+      </StackPanel>
     </Border>
 
     <!-- Onderbalk -->
@@ -1256,6 +1131,8 @@ $xamlText = @'
     <Border DockPanel.Dock="Left" Width="210" Background="White" BorderBrush="#E1E4E8" BorderThickness="0,0,1,0" Padding="12">
       <DockPanel>
         <TextBlock DockPanel.Dock="Top" Text="Apps" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8"/>
+        <Button DockPanel.Dock="Bottom" Name="BtnInstallerMap" Content="Standaardmap..." Margin="0,6,0,0"
+                ToolTip="Map waar 'Kiezen...' standaard opent bij het kiezen van een installer (_Kit\Instellingen.psd1)"/>
         <Button DockPanel.Dock="Bottom" Name="BtnNewApp" Content="+ Nieuwe app" Margin="0,8,0,0"/>
         <ListBox Name="LstApps" BorderThickness="0"/>
       </DockPanel>
@@ -1275,6 +1152,12 @@ $xamlText = @'
                   <TextBox Name="TxtInstaller" IsReadOnly="True" Background="#F7F7F7"/>
                 </DockPanel>
                 <TextBlock Name="TxtInstallerInfo" Style="{StaticResource Hint}" Text="Kies de installer (.exe of .msi). Naam, versie en stille parameters worden dan automatisch ingevuld."/>
+                <Label Content="Pakket opslaan in (verplicht)"/>
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Name="BtnOutputFolder" Content="Kiezen..." Margin="8,2,0,8"/>
+                  <TextBox Name="TxtOutputFolder"/>
+                </DockPanel>
+                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\8.18.0.51429. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken."/>
               </StackPanel>
             </Border>
 
@@ -1304,10 +1187,57 @@ $xamlText = @'
             </Border>
 
             <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <Label Content="Detectie: zo ziet Intune dat de app (in deze versie) op de laptop staat"/>
+                <ComboBox Name="CmbDetect" Width="420" HorizontalAlignment="Left" Margin="0,2,0,8" SelectedIndex="0">
+                  <ComboBoxItem Tag="AppsEnOnderdelen" Content="Apps en onderdelen (naam en versie, standaard)"/>
+                  <ComboBoxItem Tag="Bestand" Content="Bestand (pad en bestandsversie)"/>
+                  <ComboBoxItem Tag="Register" Content="Register (sleutel en waarde)"/>
+                  <ComboBoxItem Tag="Script" Content="Eigen detectiescript"/>
+                </ComboBox>
+                <TextBlock Name="TxtDetectHint" Style="{StaticResource Hint}"/>
+                <StackPanel Name="PnlDetectFile">
+                  <Label Content="Bestand"/>
+                  <TextBox Name="TxtDetectFile"/>
+                  <TextBlock Style="{StaticResource Hint}" Text="Volledig pad; %ProgramFiles% en andere omgevingsvariabelen mogen. Bijv. %ProgramFiles%\Remote help\RemoteHelp.exe"/>
+                </StackPanel>
+                <Grid Name="PnlDetectReg">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0">
+                    <Label Content="Registersleutel"/>
+                    <TextBox Name="TxtDetectRegKey"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Bijv. HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{GUID} (kopieer het pad uit regedit)"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <Label Content="Waarde"/>
+                    <TextBox Name="TxtDetectRegValue"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Bijv. DisplayVersion of Version. Leeg = alleen kijken of de sleutel bestaat."/>
+                  </StackPanel>
+                </Grid>
+                <StackPanel Name="PnlDetectVersion" Orientation="Horizontal" Margin="0,2,0,0">
+                  <Label Content="Minimale versie" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBox Name="TxtDetectVersion" Width="160" Margin="0,2,12,2"/>
+                  <CheckBox Name="ChkDetectAnyVersion" Content="Geen versie, alleen kijken of het bestaat" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Name="TxtDetectVersionHint" Style="{StaticResource Hint}" Margin="0,2,0,8" Text="Leeg = de versie van dit pakket (tabblad 1). Vul een andere versie in als de app zich met een ander nummer registreert."/>
+                <StackPanel Name="PnlDetectScript">
+                  <Label Content="Eigen detectiescript (PowerShell)"/>
+                  <TextBox Name="TxtDetectScript" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="12" Height="150"
+                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
+                  <TextBlock Style="{StaticResource Hint}" Text="Schrijf iets naar het scherm (Write-Output) als de app er staat; niets schrijven = niet gedetecteerd. Eindig met exit 0."/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                  <Button Name="BtnDetectTest" Content="Testen op deze pc"/>
+                  <TextBlock Name="TxtDetectResult" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="760"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Width="72" Height="72" CornerRadius="10" Background="#F0F2F5" Margin="0,0,16,0" VerticalAlignment="Top">
-                  <Image Name="ImgIcon" Width="52" Height="52"/>
+                  <Image Name="ImgIcon" Width="52" Height="52" RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Border>
                 <StackPanel Grid.Column="1">
                   <Label Content="Logo"/>
@@ -1315,22 +1245,15 @@ $xamlText = @'
                     <Button Name="BtnIcon" Content="Logo kiezen..."/>
                     <Button Name="BtnIconFromInstaller" Content="Uit installer halen"/>
                   </StackPanel>
-                  <TextBlock Style="{StaticResource Hint}" Text=".svg, .ico, .png of .jpg (wordt omgezet). Liefst vierkant en minstens 256x256."/>
+                  <TextBlock Style="{StaticResource Hint}" Text=".ico, .png of .jpg (wordt omgezet). Liefst vierkant en minstens 256x256."/>
                 </StackPanel>
                 <StackPanel Grid.Column="3">
                   <Label Content="Kleur van kop en knop"/>
                   <DockPanel>
                     <Border Name="RectAccent" DockPanel.Dock="Left" Width="30" Height="28" CornerRadius="5" Margin="0,2,8,8" Background="#185FA5"/>
-                    <TextBox Name="TxtAccent"/>
+                    <TextBox Name="TxtAccent" Text="#185FA5"/>
                   </DockPanel>
-                  <TextBlock Style="{StaticResource Hint}" Text="Vorm #RRGGBB, bijv. #185FA5 (blauw) of #3B7A1E (groen)."/>
-                  <Label Content="Taal van de popups"/>
-                  <ComboBox Name="CmbPopupLang" Margin="0,2,0,6" SelectedIndex="0">
-                    <ComboBoxItem Tag="Auto" Content="Automatisch (Windows-taal van de gebruiker)"/>
-                    <ComboBoxItem Tag="nl" Content="Altijd Nederlands"/>
-                    <ComboBoxItem Tag="en" Content="Altijd Engels"/>
-                  </ComboBox>
-                  <TextBlock Style="{StaticResource Hint}" Text="Engelse Windows = Engelse popups, anders Nederlands. De teksten staan in tabblad 3."/>
+                  <TextBlock Style="{StaticResource Hint}" Text="Vorm #RRGGBB. Standaard #185FA5 (blauw); leeg = standaard. Ander voorbeeld: #3B7A1E (groen)."/>
                 </StackPanel>
               </Grid>
             </Border>
@@ -1425,14 +1348,7 @@ $xamlText = @'
           <StackPanel Margin="12">
             <Border Style="{StaticResource Card}">
               <StackPanel>
-                <TextBlock TextWrapping="Wrap" Margin="0,0,0,4">Teksten voor deze app en versie, in het Nederlands en het Engels. Laat een veld leeg voor de standaardtekst (grijs eronder). Gebruikers met Engelse Windows krijgen de Engelse teksten (zie Taal van de popups in tabblad 1). Staat de app nog niet op de laptop, dan gelden de teksten "Nieuwe installatie" (onderaan). Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken (Engels: {Version}, {Minutes}, {MaxPostpones}); die worden automatisch ingevuld.</TextBlock>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                  <Label Content="Teksten en voorbeelden in" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                  <ComboBox Name="CmbTextLang" Width="150" SelectedIndex="0">
-                    <ComboBoxItem Tag="nl" Content="Nederlands"/>
-                    <ComboBoxItem Tag="en" Content="Engels"/>
-                  </ComboBox>
-                </StackPanel>
+                <TextBlock TextWrapping="Wrap" Margin="0,0,0,4">Teksten voor deze app en versie. Laat een veld leeg voor de standaardtekst (grijs eronder). Staat de app nog niet op de laptop, dan gelden de teksten "Nieuwe installatie" (onderaan). Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken; die worden automatisch ingevuld.</TextBlock>
                 <Button Name="BtnStdTexts" Content="Standaardteksten voor alle apps bewerken..." HorizontalAlignment="Left" Margin="0,6,0,0"/>
                 <CheckBox Name="ChkPrevNew" Content="Voorbeelden tonen als nieuwe installatie (de app staat nog niet op de laptop)" Margin="0,10,0,0"/>
                 <WrapPanel Margin="0,8,0,0">
@@ -1450,10 +1366,7 @@ $xamlText = @'
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}">
-              <StackPanel>
-                <StackPanel Name="PnlTexts"/>
-                <StackPanel Name="PnlTextsEn" Visibility="Collapsed"/>
-              </StackPanel>
+              <StackPanel Name="PnlTexts"/>
             </Border>
           </StackPanel>
         </ScrollViewer>
@@ -1487,16 +1400,35 @@ $xamlText = @'
                 <Label Content="Tijdvenster"/>
                 <ComboBox Name="CmbWindow" Width="340" HorizontalAlignment="Left" Margin="0,2,0,6" SelectedIndex="0">
                   <ComboBoxItem Tag="Altijd" Content="Altijd"/>
-                  <ComboBoxItem Tag="Werktijd" Content="Alleen binnen werktijd"/>
-                  <ComboBoxItem Tag="BuitenWerktijd" Content="Alleen buiten werktijd (avond, nacht, weekend)"/>
+                  <ComboBoxItem Tag="Werktijd" Content="Alleen binnen de gekozen tijden"/>
+                  <ComboBoxItem Tag="BuitenWerktijd" Content="Alleen buiten de gekozen tijden (bijv. avond, nacht, weekend)"/>
                 </ComboBox>
                 <StackPanel Name="PnlWorkTime" Margin="0,0,0,4">
                   <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                    <Label Content="Werktijd van" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox Name="TxtWorkFrom" Width="64"/>
-                    <Label Content="tot" VerticalAlignment="Center" Margin="8,0,8,0"/>
-                    <TextBox Name="TxtWorkTo" Width="64"/>
+                    <Label Content="Tijden" VerticalAlignment="Center"/>
+                    <Border Name="InfoTimes" Width="18" Height="18" CornerRadius="9" Background="#185FA5" Margin="8,4,0,0"
+                            VerticalAlignment="Center" Cursor="Hand" ToolTipService.ShowDuration="60000" ToolTipService.InitialShowDelay="100">
+                      <TextBlock Text="i" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+                      <Border.ToolTip>
+                        <ToolTip MaxWidth="380">
+                          <StackPanel Margin="4">
+                            <TextBlock FontWeight="SemiBold" Text="Meerdere tijdblokken invullen" Margin="0,0,0,6"/>
+                            <TextBlock TextWrapping="Wrap" Text="Zet elk blok als van-tot neer en scheid de blokken met een komma."/>
+                            <TextBlock TextWrapping="Wrap" Margin="0,8,0,2" FontWeight="SemiBold" Text="Voorbeelden"/>
+                            <TextBlock FontFamily="Consolas" Text="08:00-17:00"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,4" Text="één blok: de hele werkdag"/>
+                            <TextBlock FontFamily="Consolas" Text="08:00-09:00, 12:00-13:00, 16:00-17:00"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,4" Text="drie blokken: bij het inloggen, in de pauze en bij het afsluiten"/>
+                            <TextBlock FontFamily="Consolas" Text="22:00-06:00"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,4" Text="over middernacht: 's avonds en 's nachts"/>
+                            <TextBlock TextWrapping="Wrap" Margin="0,6,0,0" Text="Gebruik 24-uurs tijden met een dubbele punt (08:00, niet 8.00). De eindtijd telt niet mee: bij 08:00-09:00 kan de popup om 08:59 nog komen, om 09:00 niet meer. Klik op het icoon voor meer uitleg."/>
+                          </StackPanel>
+                        </ToolTip>
+                      </Border.ToolTip>
+                    </Border>
                   </StackPanel>
+                  <TextBox Name="TxtWorkHours" Width="340" HorizontalAlignment="Left"/>
+                  <TextBlock Style="{StaticResource Hint}" Margin="0,-4,0,0" Text="Eén of meer blokken, gescheiden door komma's. Bijv. 08:00-17:00, of 09:00-10:00, 13:00-14:00. Over middernacht mag ook: 22:00-06:00."/>
                   <WrapPanel Name="PnlWorkDays" Margin="0,8,0,4">
                     <CheckBox Name="ChkDayMa" Content="ma" Margin="0,0,12,0"/>
                     <CheckBox Name="ChkDayDi" Content="di" Margin="0,0,12,0"/>
@@ -1589,13 +1521,13 @@ $xamlText = @'
             <Border DockPanel.Dock="Top" Style="{StaticResource Card}">
               <DockPanel>
                 <Border DockPanel.Dock="Left" Width="56" Height="56" CornerRadius="10" Background="#F0F2F5" Margin="0,0,14,0">
-                  <Image Name="ImgVerIcon" Width="40" Height="40"/>
+                  <Image Name="ImgVerIcon" Width="40" Height="40" RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Border>
                 <StackPanel>
                   <TextBlock Name="TxtVerTitle" FontSize="15" FontWeight="SemiBold" Text="Kies links een versie"/>
                   <TextBlock Name="TxtVerSub" Style="{StaticResource Hint}" Margin="0,2,0,8"/>
                   <StackPanel Orientation="Horizontal">
-                    <ComboBox Name="CmbVerPreview" Width="190" Margin="0,0,8,0" SelectedIndex="0">
+                    <ComboBox Name="CmbVerPreview" Width="190" Margin="0,0,8,0" SelectedIndex="0" VerticalAlignment="Center">
                       <ComboBoxItem Tag="consent" Content="Update beschikbaar"/>
                       <ComboBoxItem Tag="last" Content="Laatste keer uitstellen"/>
                       <ComboBoxItem Tag="forced" Content="Waarschuwing"/>
@@ -1607,7 +1539,7 @@ $xamlText = @'
                       <ComboBoxItem Tag="uninstalling" Content="Verwijderen"/>
                       <ComboBoxItem Tag="uninstalled" Content="Verwijderd"/>
                     </ComboBox>
-                    <Button Name="BtnVerPreview" Content="Voorbeeld van deze versie"/>
+                    <Button Name="BtnVerPreview" Content="Voorbeeld van deze versie" VerticalAlignment="Center"/>
                   </StackPanel>
                 </StackPanel>
               </DockPanel>
@@ -1639,20 +1571,19 @@ $xamlText = @'
 </Window>
 '@
 
-[xml]$xaml = Convert-XamlLanguage $xamlText
 $Window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
-if (Test-Path $BuilderIcon) { try { $Window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([uri]$BuilderIcon) } catch { } }
+if (Test-Path $BuilderIcon) { $img = Get-BuilderIconImage; if ($img) { $Window.Icon = $img } }
 
 function Update-BuilderShortcut
 {
-    # Shortcut "AppUpdateKit Builder" with the Builder icon in the kit folder (updated at every start)
+    # Snelkoppeling "AppUpdateKit Builder" met het Builder-icoon in de kit-map (bij elke start bijgewerkt)
     try
     {
         $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $KitRoot 'AppUpdateKit Builder.lnk'))
         $s.TargetPath       = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $s.Arguments        = "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`""
         $s.WorkingDirectory = $KitRoot
-        $s.IconLocation     = "$BuilderIcon,0"
+        $s.IconLocation     = "$BuilderIconKit,0"
         $s.WindowStyle      = 7
         $s.Description      = 'AppUpdateKit Builder'
         $s.Save()
@@ -1662,34 +1593,32 @@ function Update-BuilderShortcut
 $ui = @{}
 $xaml.SelectNodes('//*[@Name]') | ForEach-Object { $ui[$_.Name] = $Window.FindName($_.Name) }
 
-$script:CurrentApp = $null     # AppId of the loaded app
+$script:CurrentApp = $null     # AppId van de geladen app
 $script:Info = @{ Kind = 'EXE'; ProductCode = '' }
 $script:Components = New-Object 'System.Collections.ObjectModel.ObservableCollection[AppKit.Component]'
 $ui.DgComponents.ItemsSource = $script:Components
 $script:TextBoxes = @{}
 $script:TextHints = @{}
-$script:TextBoxesEn = @{}
-$script:TextHintsEn = @{}
 
 function Set-Status([string]$Text) { $ui.TxtStatus.Text = $Text }
 function Show-Error([string]$Text) { [void][System.Windows.MessageBox]::Show($Text, 'AppUpdateKit Builder', 'OK', 'Warning') }
 
-$script:ErrorLog = Join-Path $KitRoot 'Builder-errors.log'
+$script:ErrorLog = Join-Path $KitRoot 'Builder-fouten.log'
 function Write-BuilderError($ErrorRecord)
 {
-    # Show and log the error, instead of the Builder closing without a message
+    # Fout in beeld tonen en wegschrijven, in plaats van dat de Builder zonder melding sluit
     if ($ErrorRecord -is [System.Management.Automation.RuntimeException] -and $ErrorRecord.ErrorRecord) { $ErrorRecord = $ErrorRecord.ErrorRecord }
     $msg = if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
         "$($ErrorRecord.Exception.Message)`r`n$($ErrorRecord.InvocationInfo.PositionMessage)`r`n$($ErrorRecord.ScriptStackTrace)"
     } else { "$ErrorRecord" }
     try { Add-Content -Path $script:ErrorLog -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n$msg`r`n" -ErrorAction Stop }
-    catch { $script:ErrorLog = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-errors.log'; Add-Content -Path $script:ErrorLog -Value $msg -ErrorAction SilentlyContinue }
+    catch { $script:ErrorLog = Join-Path ([System.IO.Path]::GetTempPath()) 'AppUpdateKit-Builder-fouten.log'; Add-Content -Path $script:ErrorLog -Value $msg -ErrorAction SilentlyContinue }
     $first = ($msg -split "`r?`n")[0]
-    Show-Error "$(T 'Er ging iets mis' 'Something went wrong'):`n`n$first`n`n$(T 'De details staan in' 'Details are in'):`n$($script:ErrorLog)"
-    Set-Status "$(T 'Fout' 'Error'): $first"
+    Show-Error "Er ging iets mis:`n`n$first`n`nDe details staan in:`n$($script:ErrorLog)"
+    Set-Status "Fout: $first"
 }
 
-# Safety net: any unexpected error in a button or timer shows a message instead of closing
+# Vangnet: elke onverwachte fout in een knop of timer geeft een melding in plaats van af te sluiten
 $Window.Dispatcher.Add_UnhandledException({
     param($s, $e)
     $e.Handled = $true
@@ -1697,46 +1626,62 @@ $Window.Dispatcher.Add_UnhandledException({
 })
 function Get-AppFolder { if ($script:CurrentApp) { Join-Path $AppsRoot $script:CurrentApp } }
 
-# Text fields: one set for Dutch (PnlTexts) and one for English (PnlTextsEn)
-foreach ($lang in 'nl', 'en')
+function Get-OutputRoot
 {
-    $panel = if ($lang -eq 'en') { $ui.PnlTextsEn } else { $ui.PnlTexts }
-    foreach ($k in $TextKeys)
+    # Waar het pakket van deze versie komt: de map bij 'Pakket opslaan in', anders Output\<AppId>\<versie> in de kit
+    $o = $ui.TxtOutputFolder.Text.Trim()
+    $kitOut = Join-Path $KitRoot 'Output'
+    $kitVersion = Join-Path (Join-Path $kitOut $script:CurrentApp) $ui.TxtVersion.Text.Trim()
+    if (-not $o) { return $kitVersion }
+    $p = [Environment]::ExpandEnvironmentVariables($o).TrimEnd('\')
+    # In de Output-map van de kit: gewone indeling Output\<AppId>\<versie> (zelfde regel als 2-Bouw-pakket.ps1)
+    try
     {
-        $lbl = New-Object System.Windows.Controls.Label
-        $lbl.Content = "$($TextLabels[$k])$(if ($lang -eq 'en') { T '  (Engels)' '  (English)' } else { T '' '  (Dutch)' })"
-        $tb = New-Object System.Windows.Controls.TextBox
-        $tb.TextWrapping = 'Wrap'
-        if ($k -like '*Message' -or $k -eq 'ForcedInfo') { $tb.AcceptsReturn = $false; $tb.MinHeight = 48 }
-        $hint = New-Object System.Windows.Controls.TextBlock
-        $hint.Style = $Window.FindResource('Hint')
-        [void]$panel.Children.Add($lbl)
-        [void]$panel.Children.Add($tb)
-        [void]$panel.Children.Add($hint)
-        if ($lang -eq 'en') { $script:TextBoxesEn[$k] = $tb; $script:TextHintsEn[$k] = $hint }
-        else { $script:TextBoxes[$k] = $tb; $script:TextHints[$k] = $hint }
+        $full = [System.IO.Path]::GetFullPath($p).TrimEnd('\'); $outFull = [System.IO.Path]::GetFullPath($kitOut).TrimEnd('\')
+        if ($full -eq $outFull -or $full.StartsWith($outFull + '\', [System.StringComparison]::OrdinalIgnoreCase)) { return $kitVersion }
     }
+    catch { }
+    return $p
+}
+
+function Set-StartFolder($Dialog)
+{
+    # Bestandskeuzevenster openen in de map van de huidige installer, anders in de standaardmap (_Kit\Instellingen.psd1)
+    $candidates = @()
+    $o = $ui.TxtOutputFolder.Text.Trim()
+    if ($o)
+    {
+        $versionDir = Split-Path $o -Parent
+        $candidates += (Join-Path $versionDir 'source')   # daar staan meestal de installers
+        $candidates += $versionDir
+    }
+    if ($KitSettings.InstallerMap) { $candidates += $KitSettings.InstallerMap }
+    foreach ($c in $candidates) { if ($c -and (Test-Path -LiteralPath $c)) { $Dialog.InitialDirectory = $c; return } }
+}
+
+# Tekstvelden opbouwen
+foreach ($k in $TextKeys)
+{
+    $lbl = New-Object System.Windows.Controls.Label
+    $lbl.Content = $TextLabels[$k]
+    $tb = New-Object System.Windows.Controls.TextBox
+    $tb.TextWrapping = 'Wrap'
+    if ($k -like '*Message' -or $k -eq 'ForcedInfo') { $tb.AcceptsReturn = $false; $tb.MinHeight = 48 }
+    $hint = New-Object System.Windows.Controls.TextBlock
+    $hint.Style = $Window.FindResource('Hint')
+    [void]$ui.PnlTexts.Children.Add($lbl)
+    [void]$ui.PnlTexts.Children.Add($tb)
+    [void]$ui.PnlTexts.Children.Add($hint)
+    $script:TextBoxes[$k] = $tb
+    $script:TextHints[$k] = $hint
 }
 
 function Update-TextHints
 {
-    $std = Get-StandardTexts 'nl'
-    $stdEn = Get-StandardTexts 'en'
-    foreach ($k in $TextKeys)
-    {
-        $script:TextHints[$k].Text   = "$(T 'Standaard' 'Standard'): $($std[$k])"
-        $script:TextHintsEn[$k].Text = "$(T 'Standaard' 'Standard'): $($stdEn[$k])"
-    }
+    $std = Get-StandardTexts
+    foreach ($k in $TextKeys) { $script:TextHints[$k].Text = "Standaard: $($std[$k])" }
 }
 Update-TextHints
-
-function Get-TextLanguage { if ([string]$ui.CmbTextLang.SelectedItem.Tag -eq 'en') { 'en' } else { 'nl' } }
-function Update-TextPanels
-{
-    $en = (Get-TextLanguage) -eq 'en'
-    $ui.PnlTexts.Visibility   = if ($en) { 'Collapsed' } else { 'Visible' }
-    $ui.PnlTextsEn.Visibility = if ($en) { 'Visible' } else { 'Collapsed' }
-}
 
 function Update-AppList
 {
@@ -1781,11 +1726,11 @@ function Update-InstallPreview
 
 function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
 {
-    # Copies the file to the app folder and adds it as a component; returns the info
+    # Kopieert het bestand naar de app-map en voegt het toe als onderdeel; geeft de info terug
     $dir = Get-AppFolder
     $name = [System.IO.Path]::GetFileName($Source)
     $dest = Join-Path $dir $name
-    if ($Source -ne $dest) { Set-Status "$(T 'Kopiëren van' 'Copying') $name..."; Copy-Item -LiteralPath $Source -Destination $dest -Force }
+    if ($Source -ne $dest) { Set-Status "Kopieren van $name..."; Copy-Item -LiteralPath $Source -Destination $dest -Force }
     $info = Get-ComponentInfo $dest
     $existing = $script:Components | Where-Object { $_.File -eq $name } | Select-Object -First 1
     if ($existing) { $existing.Kind = $info.Kind; $existing.ProductCode = $info.ProductCode }
@@ -1826,8 +1771,8 @@ function Update-VersionList
             Path      = $v.Path
             HasBron   = $v.HasBron
             BuiltText = $v.Built.ToString('dd-MM-yyyy HH:mm')
-            PkgText   = if ($v.HasPkg) { "$($v.SizeMB) MB" } else { T 'nee' 'no' }
-            BronText  = if ($v.HasBron) { T 'ja' 'yes' } else { T 'nee' 'no' }
+            PkgText   = if ($v.HasPkg) { "$($v.SizeMB) MB" } else { 'nee' }
+            BronText  = if ($v.HasBron) { 'ja' } else { 'nee' }
         })
     }
 }
@@ -1840,7 +1785,7 @@ function Show-VersionDetails
     if (-not $v)
     {
         $ui.PnlVerDetails.IsEnabled = $false
-        $ui.TxtVerTitle.Text = T 'Kies links een versie' 'Pick a version on the left'
+        $ui.TxtVerTitle.Text = 'Kies links een versie'
         $ui.TxtVerSub.Text = ''
         foreach ($n in 'TxtVerSummary', 'TxtVerInstall', 'TxtVerTexts', 'TxtVerBuildInfo') { $ui[$n].Text = '' }
         return
@@ -1849,19 +1794,18 @@ function Show-VersionDetails
     $script:SelectedVersion = $det
     $ui.PnlVerDetails.IsEnabled = $true
     $ui.TxtVerTitle.Text = "$(if ($det.Data) { $det.Data.AppName } else { $script:CurrentApp }) $($v.Version)"
-    $ui.TxtVerSub.Text = "$(T 'Gebouwd op' 'Built on') $($v.BuiltText)  |  install.intunewin: $($v.PkgText)" +
-                         $(if ($v.IsArchive) { T '  |  eerdere build, later opnieuw gebouwd' '  |  earlier build, rebuilt later' } else { '' }) +
-                         $(if (-not $v.HasInstallers) { T '  |  installers niet bewaard (oude build)' '  |  installers not kept (old build)' } else { '' })
+    $ui.TxtVerSub.Text = "Gebouwd op $($v.BuiltText)  |  install.intunewin: $($v.PkgText)" +
+                         $(if ($v.IsArchive) { '  |  eerdere build, later opnieuw gebouwd' } else { '' }) +
+                         $(if (-not $v.HasInstallers) { '  |  installers niet bewaard (oude build)' } else { '' })
 
     $summary = $det.Summary
     if ($det.Data)
     {
         $installNow = $ui.TxtInstallCmd.Text
-        $oldCmd = Join-Path (Get-BuildPart $v.Path 'Source') 'install-app.cmd'
-        $installOld = if (Test-Path $oldCmd) { [System.IO.File]::ReadAllText($oldCmd) } else { '' }
+        $installOld = if (Test-Path (Join-Path $v.Path 'Bron\install-app.cmd')) { [System.IO.File]::ReadAllText((Join-Path $v.Path 'Bron\install-app.cmd')) } else { '' }
         $diff = @(Compare-AppData $det.Data (Read-Form) $installOld $installNow)
-        $summary += "`r`n`r`n---------- $(T 'Verschil met wat nu in de Builder staat' 'Difference with what is in the Builder now') ----------`r`n"
-        $summary += if ($diff.Count) { ($diff | ForEach-Object { "- $_" }) -join "`r`n" } else { T 'Geen verschillen.' 'No differences.' }
+        $summary += "`r`n`r`n---------- Verschil met wat nu in de Builder staat ----------`r`n"
+        $summary += if ($diff.Count) { ($diff | ForEach-Object { "- $_" }) -join "`r`n" } else { 'Geen verschillen.' }
     }
     $ui.TxtVerSummary.Text   = $summary
     $ui.TxtVerInstall.Text   = $det.Install
@@ -1883,76 +1827,49 @@ function Show-VersionDetails
 function Get-SelectedVersion
 {
     $v = $ui.LstVersions.SelectedItem
-    if (-not $v) { Show-Error (T 'Selecteer eerst een versie in de lijst.' 'Select a version in the list first.') }
+    if (-not $v) { Show-Error 'Selecteer eerst een versie in de lijst.' }
     return $v
 }
 
 function Show-StandardTextsEditor
 {
-    # Small window to edit _Kit\DefaultTexts.psd1 (applies to all apps), Dutch and English
-    $xText = @'
+    # Klein venster om _Kit\Standaardteksten.psd1 te bewerken (geldt voor alle apps)
+    [xml]$x = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         Title="Standaardteksten voor alle apps" Width="760" Height="680" WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8">
+        FontFamily="Segoe UI" FontSize="13" Background="#F5F6F8" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
   <DockPanel Margin="14">
-    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-      <TextBlock TextWrapping="Wrap">Deze teksten gebruikt elke app, tenzij je bij een app in tabblad 3 een eigen tekst invult. Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken (Engels: {Version}, {Minutes}, {MaxPostpones}). Bouw de pakketten daarna opnieuw.</TextBlock>
-      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-        <TextBlock Text="Taal" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
-        <ComboBox Name="CmbLang" Width="150" SelectedIndex="0">
-          <ComboBoxItem Tag="nl" Content="Nederlands"/>
-          <ComboBoxItem Tag="en" Content="Engels"/>
-        </ComboBox>
-      </StackPanel>
-    </StackPanel>
+    <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,10">Deze teksten gebruikt elke app, tenzij je bij een app in tabblad 3 een eigen tekst invult. Je kunt {AppName}, {Versie}, {Minuten} en {MaxUitstel} gebruiken. Bouw de pakketten daarna opnieuw.</TextBlock>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
       <Button Name="BtnReset" Content="Ingebouwde teksten terugzetten" Padding="12,6" Margin="0,0,8,0"/>
       <Button Name="BtnCancel" Content="Annuleren" Padding="12,6" Margin="0,0,8,0"/>
       <Button Name="BtnOk" Content="Opslaan" Padding="12,6" Background="#185FA5" Foreground="White" BorderBrush="#185FA5"/>
     </StackPanel>
-    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel><StackPanel Name="Pnl"/><StackPanel Name="PnlEn" Visibility="Collapsed"/></StackPanel></ScrollViewer>
+    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Name="Pnl"/></ScrollViewer>
   </DockPanel>
 </Window>
 '@
-    [xml]$x = Convert-XamlLanguage $xText
     $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
     $w.Owner = $Window
     $w.Icon = $Window.Icon
-    $boxes = @{ nl = @{}; en = @{} }
-    foreach ($lang in 'nl', 'en')
+    $boxes = @{}
+    $std = Get-StandardTexts
+    foreach ($k in $TextKeys)
     {
-        $std = Get-StandardTexts $lang
-        $panel = $w.FindName($(if ($lang -eq 'en') { 'PnlEn' } else { 'Pnl' }))
-        foreach ($k in $TextKeys)
-        {
-            $l = New-Object System.Windows.Controls.Label; $l.Content = $TextLabels[$k]; $l.FontWeight = 'SemiBold'; $l.Padding = '0,6,0,2'
-            $b = New-Object System.Windows.Controls.TextBox; $b.Text = $std[$k]; $b.TextWrapping = 'Wrap'; $b.Padding = '6,4'
-            if ($k -like '*Message' -or $k -eq 'ForcedInfo') { $b.MinHeight = 48 }
-            [void]$panel.Children.Add($l); [void]$panel.Children.Add($b)
-            $boxes[$lang][$k] = $b
-        }
+        $l = New-Object System.Windows.Controls.Label; $l.Content = $TextLabels[$k]; $l.FontWeight = 'SemiBold'; $l.Padding = '0,6,0,2'
+        $b = New-Object System.Windows.Controls.TextBox; $b.Text = $std[$k]; $b.TextWrapping = 'Wrap'; $b.Padding = '6,4'
+        if ($k -like '*Message' -or $k -eq 'ForcedInfo') { $b.MinHeight = 48 }
+        [void]$w.FindName('Pnl').Children.Add($l); [void]$w.FindName('Pnl').Children.Add($b)
+        $boxes[$k] = $b
     }
-    $cmb = $w.FindName('CmbLang')
-    $cmb.SelectedIndex = if ((Get-TextLanguage) -eq 'en') { 1 } else { 0 }
-    $toggle = {
-        $en = [string]$cmb.SelectedItem.Tag -eq 'en'
-        $w.FindName('Pnl').Visibility   = if ($en) { 'Collapsed' } else { 'Visible' }
-        $w.FindName('PnlEn').Visibility = if ($en) { 'Visible' } else { 'Collapsed' }
-    }
-    & $toggle
-    $cmb.Add_SelectionChanged($toggle)
-    $w.FindName('BtnReset').Add_Click({
-        # Only the language that is shown
-        if ([string]$cmb.SelectedItem.Tag -eq 'en') { foreach ($k in $TextKeys) { $boxes.en[$k].Text = $BuiltinTextsEn[$k] } }
-        else { foreach ($k in $TextKeys) { $boxes.nl[$k].Text = $BuiltinTexts[$k] } }
-    })
+    $w.FindName('BtnReset').Add_Click({ foreach ($k in $TextKeys) { $boxes[$k].Text = $BuiltinTexts[$k] } })
     $w.FindName('BtnCancel').Add_Click({ $w.Close() })
     $w.FindName('BtnOk').Add_Click({
-        $texts = @{}; $textsEn = @{}
-        foreach ($k in $TextKeys) { $texts[$k] = $boxes.nl[$k].Text.Trim(); $textsEn[$k] = $boxes.en[$k].Text.Trim() }
-        [System.IO.File]::WriteAllText($StandardTextsPath, (ConvertTo-StandardTextsPsd1 $texts $textsEn), (New-Object System.Text.UTF8Encoding $true))
+        $texts = @{}
+        foreach ($k in $TextKeys) { $texts[$k] = $boxes[$k].Text.Trim() }
+        [System.IO.File]::WriteAllText($StandardTextsPath, (ConvertTo-StandardTextsPsd1 $texts), (New-Object System.Text.UTF8Encoding $true))
         Update-TextHints
-        Set-Status (T 'Standaardteksten opgeslagen. Bouw de pakketten opnieuw om ze te gebruiken.' 'Standard texts saved. Build the packages again to use them.')
+        Set-Status 'Standaardteksten opgeslagen. Bouw de pakketten opnieuw om ze te gebruiken.'
         $w.Close()
     })
     [void]$w.ShowDialog()
@@ -1998,10 +1915,54 @@ function Update-WindowHint
     $ui.TxtIdleMinutes.IsEnabled = [bool]$ui.ChkIdle.IsChecked
     $ui.TxtWindowHint.Text = switch ($tag)
     {
-        'Werktijd'       { T 'De popup en de installatie komen alleen op de gekozen dagen binnen de werktijd. Daarbuiten wacht de update tot de volgende werkdag.' 'The popup and the installation only come on the selected days during working hours. Outside them the update waits until the next working day.' }
-        'BuitenWerktijd' { T "De update komt alleen 's avonds, 's nachts en op de dagen die niet zijn aangevinkt. Let op: laptops staan dan vaak uit of slapen. De update komt dan pas als het apparaat buiten werktijd aan staat." 'The update only comes in the evening, at night and on the days that are not ticked. Note: laptops are often off or asleep then. The update only comes when the device is on outside working hours.' }
-        default          { T 'De popup kan op elk moment van de dag komen.' 'The popup can come at any time of the day.' }
+        'Werktijd'       { 'De popup en de installatie komen alleen op de gekozen dagen, binnen een van de tijdblokken. Daarbuiten wacht de update tot het volgende blok.' }
+        'BuitenWerktijd' { "De update komt alleen buiten de tijdblokken en op de dagen die niet zijn aangevinkt, bijvoorbeeld 's avonds, 's nachts en in het weekend. Let op: laptops staan dan vaak uit of slapen. De update komt dan pas als het apparaat buiten werktijd aan staat." }
+        default          { 'De popup kan op elk moment van de dag komen.' }
     }
+}
+
+function Update-DetectPanels
+{
+    $m = [string]$ui.CmbDetect.SelectedItem.Tag
+    $ui.PnlDetectFile.Visibility    = if ($m -eq 'Bestand') { 'Visible' } else { 'Collapsed' }
+    $ui.PnlDetectReg.Visibility     = if ($m -eq 'Register') { 'Visible' } else { 'Collapsed' }
+    $ui.PnlDetectScript.Visibility  = if ($m -eq 'Script') { 'Visible' } else { 'Collapsed' }
+    $ver = if ($m -eq 'Script') { 'Collapsed' } else { 'Visible' }
+    $ui.PnlDetectVersion.Visibility = $ver; $ui.TxtDetectVersionHint.Visibility = $ver
+    $ui.TxtDetectVersion.IsEnabled  = -not $ui.ChkDetectAnyVersion.IsChecked
+    $ui.TxtDetectHint.Text = switch ($m)
+    {
+        'Bestand'  { 'Gedetecteerd als het bestand bestaat en de bestandsversie minimaal de versie hieronder is.' }
+        'Register' { 'Gedetecteerd als de registersleutel (en waarde) bestaat en de waarde minimaal de versie hieronder is.' }
+        'Script'   { 'Je eigen PowerShell-script wordt het detectiescript voor Intune.' }
+        default    { "Gedetecteerd als in Apps en onderdelen een app staat waarvan de naam begint met '$($ui.TxtDetectName.Text.Trim())' (veld hierboven), met minimaal de versie hieronder." }
+    }
+    $ui.TxtDetectResult.Text = ''
+}
+
+function Set-DetectionFromMsi($Info)
+{
+    # Bij een MSI de detectie invullen: de uninstall-sleutel van de productcode, DisplayVersion, minimaal de ProductVersion
+    if (-not $Info.ProductCode) { return }
+    $key = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$($Info.ProductCode)"
+    $m = [string]$ui.CmbDetect.SelectedItem.Tag
+    $isDefault    = $m -eq 'AppsEnOnderdelen' -and -not $ui.TxtDetectVersion.Text.Trim() -and -not $ui.ChkDetectAnyVersion.IsChecked
+    $isEarlierMsi = $m -eq 'Register' -and $ui.TxtDetectRegKey.Text.Trim() -match '\\Uninstall\\\{[0-9A-Fa-f-]{36}\}\\?$' -and $ui.TxtDetectRegValue.Text.Trim() -eq 'DisplayVersion'
+    if ($ui.TxtDetectRegKey.Text.Trim().TrimEnd('\') -eq $key -and $m -eq 'Register') { return }
+    if (-not ($isDefault -or $isEarlierMsi))
+    {
+        $q = "Uit de MSI: productcode $($Info.ProductCode), versie $($Info.Version).`n`n" +
+             "Detectie instellen op:`n$key`nwaarde DisplayVersion, minimaal $($Info.Version)?`n`nJe huidige detectie-instelling wordt dan vervangen."
+        if ([System.Windows.MessageBox]::Show($q, 'Detectie uit de MSI', 'YesNo', 'Question') -ne 'Yes') { return }
+    }
+    Set-ComboByTag $ui.CmbDetect 'Register'
+    $ui.TxtDetectRegKey.Text   = $key
+    $ui.TxtDetectRegValue.Text = 'DisplayVersion'
+    $ui.ChkDetectAnyVersion.IsChecked = $false
+    $ui.TxtDetectVersion.Text  = ''        # leeg = de versie van het pakket (= ProductVersion uit de MSI)
+    Update-DetectPanels
+    $ui.TxtDetectResult.Foreground = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#555555')
+    $ui.TxtDetectResult.Text = "  Detectie ingevuld uit de MSI (productcode $($Info.ProductCode)). Klik op Testen op deze pc als deze versie hier al geïnstalleerd is."
 }
 
 function Update-RestartPanel
@@ -2013,25 +1974,31 @@ function Update-RestartPanel
 
 function Read-Form
 {
-    $texts = @{}; $textsEn = @{}
-    foreach ($k in $TextKeys) { $texts[$k] = $script:TextBoxes[$k].Text.Trim(); $textsEn[$k] = $script:TextBoxesEn[$k].Text.Trim() }
+    $texts = @{}
+    foreach ($k in $TextKeys) { $texts[$k] = $script:TextBoxes[$k].Text.Trim() }
     return @{
         AppId                 = $ui.TxtAppId.Text.Trim()
         AppName               = $ui.TxtAppName.Text.Trim()
         Version               = $ui.TxtVersion.Text.Trim()
         DetectName            = $ui.TxtDetectName.Text.Trim()
+        OutputFolder          = $ui.TxtOutputFolder.Text.Trim()
         Processes             = @($ui.TxtProcesses.Text -split '[,;]' | ForEach-Object { ($_.Trim() -replace '\.exe$', '') } | Where-Object { $_ })
         Icon                  = 'app.ico'
-        AccentColor           = $ui.TxtAccent.Text.Trim()
-        PopupLanguage         = [string]$ui.CmbPopupLang.SelectedItem.Tag
+        AccentColor           = if ($ui.TxtAccent.Text.Trim()) { $ui.TxtAccent.Text.Trim() } else { '#185FA5' }   # leeg = standaardkleur
         OnlyUpdateExisting    = [bool]$ui.ChkOnlyExisting.IsChecked
+        DetectionMethod       = [string]$ui.CmbDetect.SelectedItem.Tag
+        DetectVersion         = if ($ui.ChkDetectAnyVersion.IsChecked) { '-' } else { $ui.TxtDetectVersion.Text.Trim() }
+        DetectFile            = $ui.TxtDetectFile.Text.Trim()
+        DetectRegKey          = $ui.TxtDetectRegKey.Text.Trim()
+        DetectRegValue        = $ui.TxtDetectRegValue.Text.Trim()
+        DetectScript          = $ui.TxtDetectScript.Text.TrimEnd()
         InstallDuringSetup    = [bool]$ui.ChkDuringSetup.IsChecked
         MaxPostpones          = $ui.TxtMaxPostpones.Text.Trim()
         PostponeHours         = $ui.TxtPostponeHours.Text.Trim()
         ConsentTimeoutMinutes = $ui.TxtConsentTimeout.Text.Trim()
         ForcedDelayMinutes    = $ui.TxtForcedMinutes.Text.Trim()
         InstallWindow         = [string]$ui.CmbWindow.SelectedItem.Tag
-        WorkHours             = "$($ui.TxtWorkFrom.Text.Trim())-$($ui.TxtWorkTo.Text.Trim())"
+        WorkHours             = (($ui.TxtWorkHours.Text -split '[,;]') | ForEach-Object { $_ -replace '\s', '' } | Where-Object { $_ }) -join ','
         WorkDays              = (@($DayBoxes.Keys | Where-Object { $ui[$DayBoxes[$_]].IsChecked }) -join ',')
         IdleMinutes           = if ($ui.ChkIdle.IsChecked) { $ui.TxtIdleMinutes.Text.Trim() } else { '0' }
         NoUserAction          = [string]$ui.CmbNoUser.SelectedItem.Tag
@@ -2041,7 +2008,6 @@ function Read-Form
         RestartWarningMinutes  = $ui.TxtRestartWarning.Text.Trim()
         UninstallNotify        = [bool]$ui.ChkUninstallNotify.IsChecked
         Texts                 = $texts
-        TextsEn               = $textsEn
         AutoInstallSteps      = [bool]$ui.ChkAutoSteps.IsChecked
         Components            = Get-ComponentList
         PreInstall            = $ui.TxtPreInstall.Text.TrimEnd()
@@ -2053,17 +2019,17 @@ function Import-App([string]$AppId)
 {
     $dir = Join-Path $AppsRoot $AppId
     try { $d = Read-AppPsd1 (Join-Path $dir 'app.psd1') }
-    catch { Show-Error "$(T "app.psd1 van $AppId kan niet gelezen worden" "app.psd1 of $AppId cannot be read"):`n$($_.Exception.Message)"; return }
+    catch { Show-Error "app.psd1 van $AppId kan niet gelezen worden:`n$($_.Exception.Message)"; return }
 
-    $script:CurrentApp = $AppId
+    $script:CurrentApp = $AppId; $script:LastInstallerPath = $null   # andere app: startmap opnieuw bepalen
     $ui.Tabs.IsEnabled = $true
     $ui.TxtAppId.Text       = $d.AppId
     $ui.TxtAppName.Text     = $d.AppName
     $ui.TxtVersion.Text     = $d.Version
     $ui.TxtDetectName.Text  = $d.DetectName
     $ui.TxtProcesses.Text   = (@($d.Processes) -join ', ')
+    $ui.TxtOutputFolder.Text = "$($d.OutputFolder)"
     $ui.TxtAccent.Text      = if ($d.AccentColor) { $d.AccentColor } else { '#185FA5' }
-    Set-ComboByTag $ui.CmbPopupLang $(if ("$($d.PopupLanguage)" -in 'nl', 'en') { "$($d.PopupLanguage)" } else { 'Auto' })
     $ui.ChkOnlyExisting.IsChecked = if ($null -eq $d.OnlyUpdateExisting) { $true } else { [bool]$d.OnlyUpdateExisting }
     $ui.ChkDuringSetup.IsChecked  = $d.InstallDuringSetup -ne $false
     $ui.TxtMaxPostpones.Text   = if ($null -ne $d.MaxPostpones) { $d.MaxPostpones } else { 5 }
@@ -2074,8 +2040,7 @@ function Import-App([string]$AppId)
     $ui.TxtForcedMinutes.Text  = if ($null -ne $d.ForcedDelayMinutes) { $d.ForcedDelayMinutes } else { 5 }
     Set-ComboByTag $ui.CmbWindow $(if ($d.InstallWindow) { $d.InstallWindow } else { 'Altijd' })
     Set-ComboByTag $ui.CmbNoUser $(if ($d.NoUserAction) { $d.NoUserAction } else { 'Installeren' })
-    $hrs = if ($d.WorkHours -match '^\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*$') { $Matches[1], $Matches[2] } else { '08:00', '17:00' }
-    $ui.TxtWorkFrom.Text = $hrs[0]; $ui.TxtWorkTo.Text = $hrs[1]
+    $ui.TxtWorkHours.Text = if ($d.WorkHours) { ("$($d.WorkHours)" -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ', ' } else { '08:00-17:00' }
     $dayText = if ($d.WorkDays) { "$($d.WorkDays)".ToLower() } else { 'ma,di,wo,do,vr' }
     foreach ($k in $DayBoxes.Keys) { $ui[$DayBoxes[$k]].IsChecked = $dayText -match "(^|[,; ])$k" }
     $idle = [int]("0$($d.IdleMinutes)")
@@ -2083,44 +2048,48 @@ function Import-App([string]$AppId)
     $ui.TxtIdleMinutes.Text = if ($idle -gt 0) { $idle } else { 30 }
     Update-WindowHint
     Set-ComboByTag $ui.CmbRestart $(if ($d.RestartMode) { $d.RestartMode } else { 'Nooit' })
+    Set-ComboByTag $ui.CmbDetect $(if ($d.DetectionMethod) { $d.DetectionMethod } else { 'AppsEnOnderdelen' })
+    $ui.ChkDetectAnyVersion.IsChecked = "$($d.DetectVersion)" -eq '-'
+    $ui.TxtDetectVersion.Text  = if ("$($d.DetectVersion)" -eq '-') { '' } else { "$($d.DetectVersion)" }
+    $ui.TxtDetectFile.Text     = "$($d.DetectFile)"
+    $ui.TxtDetectRegKey.Text   = "$($d.DetectRegKey)"
+    $ui.TxtDetectRegValue.Text = "$($d.DetectRegValue)"
+    $ui.TxtDetectScript.Text   = "$($d.DetectScript)"
+    Update-DetectPanels
     $ui.TxtRestartReminder.Text = if ($null -ne $d.RestartReminderMinutes) { $d.RestartReminderMinutes } else { 60 }
     $ui.TxtRestartDeadline.Text = if ($null -ne $d.RestartDeadlineHours) { $d.RestartDeadlineHours } else { 24 }
     $ui.TxtRestartWarning.Text  = if ($null -ne $d.RestartWarningMinutes) { $d.RestartWarningMinutes } else { 15 }
     Update-RestartPanel
     $ui.ChkUninstallNotify.IsChecked = $d.UninstallNotify -eq $true
-    foreach ($k in $TextKeys)
-    {
-        $script:TextBoxes[$k].Text   = if ($d.Texts -and $d.Texts[$k]) { $d.Texts[$k] } else { '' }
-        $script:TextBoxesEn[$k].Text = if ($d.TextsEn -and $d.TextsEn[$k]) { $d.TextsEn[$k] } else { '' }
-    }
+    foreach ($k in $TextKeys) { $script:TextBoxes[$k].Text = if ($d.Texts -and $d.Texts[$k]) { $d.Texts[$k] } else { '' } }
 
     $ui.TxtInstallCmd.Text   = if (Test-Path (Join-Path $dir 'install-app.cmd')) { [System.IO.File]::ReadAllText((Join-Path $dir 'install-app.cmd')) } else { '' }
     $ui.TxtUninstallCmd.Text = if (Test-Path (Join-Path $dir 'uninstall-app.cmd')) { [System.IO.File]::ReadAllText((Join-Path $dir 'uninstall-app.cmd')) } else { '' }
 
-    # Components and extra steps
+    # Onderdelen en extra stappen
     $script:Components.Clear()
     foreach ($c in @($d.Components)) { if ($c) { $script:Components.Add((New-ComponentRow $c)) } }
     $ui.TxtPreInstall.Text  = "$($d.PreInstall)"
     $ui.TxtPostInstall.Text = "$($d.PostInstall)"
-    $isTemplate = $ui.TxtInstallCmd.Text -match '(MijnApp|MyApp)-Setup\.exe'
-    # Create automatically only when there are components (or for a new app from the template);
-    # a hand-written install-app.cmd without components is never overwritten.
+    $isTemplate = $ui.TxtInstallCmd.Text -match 'MijnApp-Setup\.exe'
+    # Automatisch maken alleen als er onderdelen zijn (of bij een nieuwe app uit het sjabloon);
+    # een met de hand geschreven install-app.cmd zonder onderdelen wordt nooit overschreven.
     $auto = if ($null -ne $d.AutoInstallSteps) { [bool]$d.AutoInstallSteps } else { $script:Components.Count -gt 0 }
     if ($script:Components.Count -eq 0) { $auto = $isTemplate }
     $ui.ChkAutoSteps.IsChecked = $auto
     Update-InstallPreview
 
-    # Main installer: the main component, otherwise the largest .exe/.msi in the folder
+    # Hoofdinstaller: het hoofdonderdeel, anders de grootste .exe/.msi in de map
     $main = Get-MainComponent
     $inst = if ($main -and (Test-Path (Join-Path $dir $main.File))) { Get-Item (Join-Path $dir $main.File) }
             else { Get-ChildItem $dir -File | Where-Object { $_.Extension -in '.exe', '.msi' } | Sort-Object Length -Descending | Select-Object -First 1 }
     $ui.TxtInstaller.Text = if ($inst) { $inst.Name } else { '' }
-    $ui.TxtInstallerInfo.Text = if ($inst) { T 'Kies de installer opnieuw om naam, versie en parameters opnieuw te laten herkennen.' 'Pick the installer again to detect name, version and parameters again.' } else { T 'Nog geen installer gekozen.' 'No installer chosen yet.' }
+    $ui.TxtInstallerInfo.Text = if ($inst) { 'Kies de installer opnieuw om naam, versie en parameters opnieuw te laten herkennen.' } else { 'Nog geen installer gekozen.' }
     $script:Info = @{ Kind = if ($inst -and $inst.Extension -eq '.msi') { 'MSI' } else { 'EXE' }; ProductCode = '' }
 
     Update-FileList; Update-IconPreview; Update-AccentPreview; Update-VersionList
-    $ui.BtnOpenOutput.IsEnabled = Test-Path (Join-Path (Join-Path $KitRoot 'Output') $AppId)
-    Set-Status "$(T 'Geladen' 'Loaded'): $AppId"
+    $ui.BtnOpenOutput.IsEnabled = (Test-Path (Join-Path (Join-Path $KitRoot 'Output') $AppId)) -or ($d.OutputFolder -and (Test-Path "$($d.OutputFolder)"))
+    Set-Status "Geladen: $AppId"
 }
 
 function Save-App
@@ -2129,7 +2098,7 @@ function Save-App
     Update-InstallPreview
     $d = Read-Form
     $errors = Test-AppData $d
-    if ($errors) { Show-Error ((T 'Controleer de volgende punten:' 'Please check the following:') + "`n`n- " + ($errors -join "`n- ")); return $false }
+    if ($errors) { Show-Error ("Controleer de volgende punten:`n`n- " + ($errors -join "`n- ")); return $false }
 
     $dir = Get-AppFolder
     [System.IO.File]::WriteAllText((Join-Path $dir 'app.psd1'), (ConvertTo-Psd1Text $d), (New-Object System.Text.UTF8Encoding $true))
@@ -2139,20 +2108,17 @@ function Save-App
         $txt = ($pair[1] -replace "`r?`n", "`r`n")
         if ($txt -match '[^\x00-\x7F]')
         {
-            Show-Error "$($pair[0]) $(T 'bevat speciale tekens (zoals é of ï). Die geeft cmd niet goed door; zet zulke teksten in tabblad 3.' 'contains special characters (such as é or ï). cmd does not pass them on correctly; put such texts in tab 3.')"
+            Show-Error "$($pair[0]) bevat speciale tekens (zoals é of ï). Die geeft cmd niet goed door; zet zulke teksten in tabblad 3."
         }
         [System.IO.File]::WriteAllText((Join-Path $dir $pair[0]), $txt, [System.Text.Encoding]::Default)
     }
-    Set-Status "$(T 'Opgeslagen' 'Saved'): Apps\$($script:CurrentApp)"
+    Set-Status "Opgeslagen: Apps\$($script:CurrentApp)"
     return $true
 }
 
-function Show-Preview([string]$Kind, [hashtable]$Data = $null, $Std = $null, [string]$IconPath = '', [string]$Language = '')
+function Show-Preview([string]$Kind, [hashtable]$Data = $null, $Std = $null, [string]$IconPath = '')
 {
-    # Without -Data: what is in the form now. With -Data: an earlier built version.
-    # Language: the language chosen in tab 3 (Texts and previews in)
-    if (-not $Language) { $Language = Get-TextLanguage }
-    $P = { param($nl, $en) if ($Language -eq 'en') { $en } else { $nl } }
+    # Zonder -Data: wat nu in het formulier staat. Met -Data: een eerder gebouwde versie.
     $d = $Data
     if (-not $d)
     {
@@ -2160,50 +2126,46 @@ function Show-Preview([string]$Kind, [hashtable]$Data = $null, $Std = $null, [st
         $dir = Get-AppFolder
         if ($dir) { $IconPath = Join-Path $dir 'app.ico' }
     }
-    if (-not $Std) { $Std = Get-StandardTexts $Language }
     $newMode = [bool]($ui.ChkPrevNew -and $ui.ChkPrevNew.IsChecked)
-    $txt = { param($key, $data = $d) Get-EffectiveText -New:$newMode $key $data $Std -Language $Language }
     $cfg = @{
-        Lang          = $Language
         AccentColor   = if ($d.AccentColor -match '^#[0-9A-Fa-f]{6}$') { $d.AccentColor } else { '#185FA5' }
         IconPath      = $IconPath
         Heading       = $d.AppName
         Sender        = $d.AppName
         ForcedMinutes = [int]("0$($d.ForcedDelayMinutes)")
-        LaterHint     = & $P 'morgen' 'tomorrow'
+        LaterHint     = 'morgen'
     }
     switch ($Kind)
     {
-        'consent' { $cfg.Mode = 'consent'; $cfg.Remaining = 3; $cfg.TimeoutSeconds = 900; $cfg.IsNew = $newMode; if ($newMode) { $cfg.NowText = & $P 'Nu installeren' 'Install now' }
-                    $cfg.SubHeading = & $txt 'ConsentSubHeading'; $cfg.Message = & $txt 'ConsentMessage' }
-        'last'    { $cfg.Mode = 'consent'; $cfg.Remaining = 1; $cfg.TimeoutSeconds = 900; $cfg.IsNew = $newMode; if ($newMode) { $cfg.NowText = & $P 'Nu installeren' 'Install now' }
-                    $cfg.SubHeading = & $txt 'ConsentSubHeading'; $cfg.Message = & $txt 'ConsentMessage' }
-        'forced'  { $cfg.Mode = 'forced'; $cfg.TimeoutSeconds = [math]::Max(60, $cfg.ForcedMinutes * 60); $cfg.IsNew = $newMode
-                    $cfg.SubHeading = & $txt 'ForcedSubHeading'; $cfg.Message = & $txt 'ForcedMessage'
-                    $cfg.InfoText = & $txt 'ForcedInfo' }
-        'restart' { $cfg.Mode = 'consent'; $cfg.TimeoutSeconds = 900; $cfg.NowText = & $P 'Nu herstarten' 'Restart now'; $cfg.LaterText = 'Later'
-                    $cfg.SubHeading = & $txt 'RestartSubHeading'; $cfg.Message = & $txt 'RestartMessage'
+        'consent' { $cfg.Mode = 'consent'; $cfg.Remaining = 3; $cfg.TimeoutSeconds = 900; $cfg.IsNew = $newMode; if ($newMode) { $cfg.NowText = 'Nu installeren' }
+                    $cfg.SubHeading = Get-EffectiveText -New:$newMode 'ConsentSubHeading' $d $Std; $cfg.Message = Get-EffectiveText -New:$newMode 'ConsentMessage' $d $Std }
+        'last'    { $cfg.Mode = 'consent'; $cfg.Remaining = 1; $cfg.TimeoutSeconds = 900; $cfg.IsNew = $newMode; if ($newMode) { $cfg.NowText = 'Nu installeren' }
+                    $cfg.SubHeading = Get-EffectiveText -New:$newMode 'ConsentSubHeading' $d $Std; $cfg.Message = Get-EffectiveText -New:$newMode 'ConsentMessage' $d $Std }
+        'forced'  { $cfg.Mode = 'forced'; $cfg.TimeoutSeconds = [math]::Max(60, $cfg.ForcedMinutes * 60)
+                    $cfg.SubHeading = Get-EffectiveText -New:$newMode 'ForcedSubHeading' $d $Std; $cfg.Message = Get-EffectiveText -New:$newMode 'ForcedMessage' $d $Std
+                    $cfg.InfoText = Get-EffectiveText -New:$newMode 'ForcedInfo' $d $Std }
+        'restart' { $cfg.Mode = 'consent'; $cfg.TimeoutSeconds = 900; $cfg.NowText = 'Nu herstarten'; $cfg.LaterText = 'Later'
+                    $cfg.SubHeading = Get-EffectiveText -New:$newMode 'RestartSubHeading' $d $Std; $cfg.Message = Get-EffectiveText -New:$newMode 'RestartMessage' $d $Std
                     $rem = [int]("0$($d.RestartReminderMinutes)"); if (-not $rem) { $rem = 60 }
-                    $when = if ($rem % 60 -eq 0) { & $P "over $($rem / 60) uur" "in $($rem / 60) hour(s)" } else { & $P "over $rem minuten" "in $rem minutes" }
-                    $cfg.InfoOverride = & $P "Kies je Later, dan vragen we het $when opnieuw." "If you choose Later, we will ask again $when."
-                    $cfg.TimeoutText = & $P 'Maak je geen keuze, dan vragen we het later opnieuw ({tijd}).' 'If you do not choose, we will ask again later ({tijd}).' }
+                    $cfg.InfoOverride = "Kies je Later, dan vragen we het $(if ($rem % 60 -eq 0) { "over $($rem / 60) uur" } else { "over $rem minuten" }) opnieuw."
+                    $cfg.TimeoutText = 'Maak je geen keuze, dan vragen we het later opnieuw ({tijd}).' }
         'restartforced' {
                     $wm = [int]("0$($d.RestartWarningMinutes)"); if (-not $wm) { $wm = 15 }
-                    $dw = @{} + $d; $dw.ForcedDelayMinutes = $wm      # {Minuten}/{Minutes} = warning time before the restart
-                    $cfg.Mode = 'forced'; $cfg.TimeoutSeconds = $wm * 60; $cfg.NowText = & $P 'Nu herstarten' 'Restart now'; $cfg.InfoWarning = $true
-                    $cfg.InfoOverride = & $P 'Klaar om te herstarten? Sla je werk op en klik op Nu herstarten.' 'Ready to restart? Save your work and click Restart now.'
-                    $cfg.CountdownText = & $P 'De laptop herstart automatisch over {tijd}.' 'The laptop restarts automatically in {tijd}.'
-                    $cfg.SubHeading = & $txt 'RestartForcedSubHeading' $dw; $cfg.Message = & $txt 'RestartForcedMessage' $dw }
+                    $dw = @{} + $d; $dw.ForcedDelayMinutes = $wm      # {Minuten} = waarschuwingstijd voor de herstart
+                    $cfg.Mode = 'forced'; $cfg.TimeoutSeconds = $wm * 60; $cfg.NowText = 'Nu herstarten'; $cfg.InfoWarning = $true
+                    $cfg.InfoOverride = 'Klaar om te herstarten? Sla je werk op en klik op Nu herstarten.'
+                    $cfg.CountdownText = 'De laptop herstart automatisch over {tijd}.'
+                    $cfg.SubHeading = Get-EffectiveText -New:$newMode 'RestartForcedSubHeading' $dw $Std; $cfg.Message = Get-EffectiveText -New:$newMode 'RestartForcedMessage' $dw $Std }
         default   { $cfg.Mode = 'toast'; $cfg.AutoCloseSeconds = 30
                     $cfg.Type = @{ uninstalling = 'installing'; uninstalled = 'success' }[$Kind]; if (-not $cfg.Type) { $cfg.Type = $Kind }
                     $prefix = @{ installing = 'Installing'; success = 'Success'; error = 'Error'; uninstalling = 'Uninstalling'; uninstalled = 'Uninstalled' }[$Kind]
-                    $cfg.Heading = & $txt "$($prefix)Heading"; $cfg.Message = & $txt "$($prefix)Message" }
+                    $cfg.Heading = Get-EffectiveText -New:$newMode "$($prefix)Heading" $d $Std; $cfg.Message = Get-EffectiveText -New:$newMode "$($prefix)Message" $d $Std }
     }
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "AppUI_preview_$(Get-Random).json"
     [System.IO.File]::WriteAllText($tmp, ($cfg | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
     Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitDir 'AppUI.ps1')`"", '-ConfigPath', "`"$tmp`"")
-    Set-Status (T 'Voorbeeld geopend (rechtsonder in je scherm). Sluiten via de knoppen; er wordt niets geïnstalleerd.' 'Preview opened (bottom right of your screen). Close it with the buttons; nothing is installed.')
+    Set-Status 'Voorbeeld geopend (rechtsonder in je scherm). Sluiten via de knoppen; er wordt niets geïnstalleerd.'
 }
 
 function Get-IntuneWinAppUtil
@@ -2214,7 +2176,7 @@ function Get-IntuneWinAppUtil
     if ($cmd) { return $cmd.Source }
 
     $r = [System.Windows.MessageBox]::Show(
-        (T "IntuneWinAppUtil.exe (van Microsoft) is nodig om het .intunewin-pakket te maken, maar staat nog niet naast de Builder.`n`nNu downloaden van GitHub (microsoft/Microsoft-Win32-Content-Prep-Tool)?" "IntuneWinAppUtil.exe (from Microsoft) is needed to create the .intunewin package, but is not next to the Builder yet.`n`nDownload it now from GitHub (microsoft/Microsoft-Win32-Content-Prep-Tool)?"),
+        "IntuneWinAppUtil.exe (van Microsoft) is nodig om het .intunewin-pakket te maken, maar staat nog niet naast de Builder.`n`nNu downloaden van GitHub (microsoft/Microsoft-Win32-Content-Prep-Tool)?",
         'AppUpdateKit Builder', 'YesNo', 'Question')
     if ($r -ne 'Yes') { return $null }
     try
@@ -2226,7 +2188,7 @@ function Get-IntuneWinAppUtil
     }
     catch
     {
-        Show-Error (T "Downloaden lukte niet: $($_.Exception.Message)`n`nDownload IntuneWinAppUtil.exe handmatig en zet hem in $KitRoot." "Download failed: $($_.Exception.Message)`n`nDownload IntuneWinAppUtil.exe manually and put it in $KitRoot.")
+        Show-Error "Downloaden lukte niet: $($_.Exception.Message)`n`nDownload IntuneWinAppUtil.exe handmatig en zet hem in $KitRoot."
         return $null
     }
 }
@@ -2236,7 +2198,7 @@ $buildTimer = New-Object System.Windows.Threading.DispatcherTimer
 $buildTimer.Interval = [TimeSpan]::FromMilliseconds(500)
 function Read-SharedText([string]$Path)
 {
-    # Read while the build script is still writing to the file (ReadAllText would refuse)
+    # Lezen terwijl het bouwscript nog in het bestand schrijft (ReadAllText zou dan weigeren)
     if (-not (Test-Path $Path)) { return '' }
     $fs = $null
     try
@@ -2261,25 +2223,25 @@ $buildTimer.Add_Tick({
         $script:BuildProc.WaitForExit()
         $buildTimer.Stop()
         $ui.BtnBuild.IsEnabled = $true
-        $out = Join-Path (Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp) $script:BuildVersion
+        $out = $script:BuildRoot
         $pkgFile = Get-Item (Join-Path $out 'install.intunewin') -ErrorAction SilentlyContinue
         Update-VersionList
         if ($script:BuildProc.ExitCode -eq 0 -and $pkgFile -and $pkgFile.LastWriteTime -gt $script:BuildStart)
         {
             $ui.BtnOpenOutput.IsEnabled = $true
-            Set-Status "$(T 'Klaar' 'Done'): Output\$($script:CurrentApp)\$($script:BuildVersion)\install.intunewin"
-            $r = [System.Windows.MessageBox]::Show((T "Het pakket is klaar:`n$($pkgFile.FullName)`n`nIn dezelfde map staan Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-Settings.txt en BuildInfo.txt.`n`nMap openen?" "The package is ready:`n$($pkgFile.FullName)`n`nThe same folder has Intune\Install.ps1, Intune\Uninstall.ps1, Intune\Requirement.ps1, Intune\Detection.ps1, Intune-Settings.txt and BuildInfo.txt.`n`nOpen the folder?"), (T 'Pakket klaar' 'Package ready'), 'YesNo', 'Information')
+            Set-Status "Klaar: $(Join-Path $out 'install.intunewin')"
+            $r = [System.Windows.MessageBox]::Show("Het pakket is klaar:`n$($pkgFile.FullName)`n`nIn dezelfde map staan Intune\Requirement.ps1, Intune\Detection.ps1, Intune-instellingen.txt en Bouwinfo.txt.`n`nMap openen?", 'Pakket klaar', 'YesNo', 'Information')
             if ($r -eq 'Yes') { Start-Process explorer.exe $out }
         }
         elseif ($script:BuildProc.ExitCode -eq 0)
         {
-            Set-Status (T 'Bestanden gemaakt, maar geen .intunewin (zie Resultaat).' 'Files created, but no .intunewin (see Result).')
+            Set-Status 'Bestanden gemaakt, maar geen .intunewin (zie Resultaat).'
             $ui.BtnOpenOutput.IsEnabled = $true
         }
         else
         {
-            Set-Status (T 'Bouwen mislukt: zie het tabblad Resultaat.' 'Build failed: see the Result tab.')
-            Show-Error (T 'Het pakket kon niet gebouwd worden. In het tabblad Resultaat staat wat er mis is.' 'The package could not be built. The Result tab shows what is wrong.')
+            Set-Status 'Bouwen mislukt: zie het tabblad Resultaat.'
+            Show-Error 'Het pakket kon niet gebouwd worden. In het tabblad Resultaat staat wat er mis is.'
         }
     }
   }
@@ -2291,70 +2253,90 @@ $buildTimer.Add_Tick({
   }
 })
 
+function Confirm-OutputFolder
+{
+    # Voor het bouwen: pakketmap verplicht; bestaat hij nog niet, dan aanbieden om hem aan te maken
+    $o = $ui.TxtOutputFolder.Text.Trim()
+    if (-not $o)
+    {
+        Show-Error "Kies eerst in tabblad 1 bij 'Pakket opslaan in' de map voor het pakket, bijv. ...\versies\8.18.0.51429\intune-package."
+        $ui.Tabs.SelectedIndex = 0
+        return $false
+    }
+    $path = [Environment]::ExpandEnvironmentVariables($o).TrimEnd('\')
+    if (Test-Path -LiteralPath $path -PathType Container) { return $true }
+    # Schijf of netwerkshare bereikbaar? (I:\ of \\server\share)
+    $root = if ($path -match '^(\\\\[^\\]+\\[^\\]+)') { $Matches[1] } else { [System.IO.Path]::GetPathRoot($path) }
+    if (-not $root -or -not (Test-Path -LiteralPath $root))
+    {
+        Show-Error "De schijf of share $root is niet bereikbaar. Is de schijf gekoppeld?`n`nPakket opslaan in: $path"
+        return $false
+    }
+    $q = "De map voor het pakket bestaat nog niet:`n`n$path`n`nNu aanmaken?"
+    if ([System.Windows.MessageBox]::Show($q, 'Map aanmaken', 'YesNo', 'Question') -ne 'Yes') { return $false }
+    try { New-Item -Path $path -ItemType Directory -Force -ErrorAction Stop | Out-Null; return $true }
+    catch { Show-Error "De map kon niet worden aangemaakt: $($_.Exception.Message)"; return $false }
+}
+
 function Start-Build
 {
     if (-not (Save-App)) { return }
-    if (-not (Get-IntuneWinAppUtil)) { Set-Status (T 'Zonder IntuneWinAppUtil.exe worden alleen de bestanden gemaakt.' 'Without IntuneWinAppUtil.exe only the files are created.') }
+    if (-not (Confirm-OutputFolder)) { return }
+    if (-not (Get-IntuneWinAppUtil)) { Set-Status 'Zonder IntuneWinAppUtil.exe worden alleen de bestanden gemaakt.' }
 
     $script:BuildVersion = $ui.TxtVersion.Text.Trim()
-    $existing = Join-Path (Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp) $script:BuildVersion
-    if (Test-Path $existing)
+    $script:BuildRoot = Get-OutputRoot
+    $kitCopy = Join-Path (Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp) $script:BuildVersion
+    if ((Test-Path (Join-Path $script:BuildRoot 'Bouwinfo.txt')) -or ((Test-Path $kitCopy) -and $script:BuildRoot -eq $kitCopy))
     {
-        $q = T "Versie $($script:BuildVersion) is al eens gebouwd.`n`nOpnieuw bouwen? De huidige build van deze versie wordt bewaard in het archief (zichtbaar in tabblad Versies als 'vervangen').`n`nWil je juist een nieuwe versie maken? Kies Nee en pas eerst het versienummer aan of kies de nieuwe installer." "Version $($script:BuildVersion) has been built before.`n`nBuild again? The current build of this version is kept in the archive (shown in the Versions tab as 'replaced').`n`nDo you want a new version instead? Choose No and first change the version number or pick the new installer."
-        if ([System.Windows.MessageBox]::Show($q, (T 'Versie bestaat al' 'Version already exists'), 'YesNo', 'Question') -ne 'Yes') { return }
+        $q = "Versie $($script:BuildVersion) is al eens gebouwd.`n`nOpnieuw bouwen? De huidige build van deze versie wordt bewaard in het archief (zichtbaar in tabblad Versies als 'vervangen').`n`nWil je juist een nieuwe versie maken? Kies Nee en pas eerst het versienummer aan of kies de nieuwe installer."
+        if ([System.Windows.MessageBox]::Show($q, 'Versie bestaat al', 'YesNo', 'Question') -ne 'Yes') { return }
     }
     $script:BuildLog = Join-Path ([System.IO.Path]::GetTempPath()) "AppUpdateKit_build_$(Get-Random).log"
     $script:BuildStart = Get-Date
     $ui.TxtLog.Text = ''
     $ui.TabLog.IsSelected = $true
     $ui.BtnBuild.IsEnabled = $false
-    Set-Status (T "Bezig met bouwen van $($script:CurrentApp)... (grote installers kunnen even duren)" "Building $($script:CurrentApp)... (large installers can take a while)")
+    Set-Status "Bezig met bouwen van $($script:CurrentApp)... (grote installers kunnen even duren)"
 
     $script:BuildProc = Start-Process -FilePath 'powershell.exe' -NoNewWindow -PassThru `
         -RedirectStandardOutput $script:BuildLog -RedirectStandardError "$($script:BuildLog).err" `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitRoot '2-Build-Package.ps1')`"", '-App', $script:CurrentApp, '-Lang', $script:Lang)
-    # Keep the handle: otherwise Windows PowerShell 5.1 returns no ExitCode afterwards
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitRoot '2-Bouw-pakket.ps1')`"", '-App', $script:CurrentApp)
+    # Handle vasthouden: anders geeft Windows PowerShell 5.1 na afloop geen ExitCode terug
     $null = $script:BuildProc.Handle
     $buildTimer.Start()
 }
 
-#region Events
+#region Gebeurtenissen
 $ui.LstApps.Add_SelectionChanged({ if ($ui.LstApps.SelectedItem) { Import-App ([string]$ui.LstApps.SelectedItem) } })
 
 $ui.BtnNewApp.Add_Click({
-    $id = [Microsoft.VisualBasic.Interaction]::InputBox((T "AppId van de nieuwe app (alleen letters, cijfers, - en _), bijv. 7Zip:" "AppId of the new app (only letters, digits, - and _), e.g. 7Zip:"), (T 'Nieuwe app' 'New app'), '')
+    $id = [Microsoft.VisualBasic.Interaction]::InputBox("AppId van de nieuwe app (alleen letters, cijfers, - en _), bijv. 7Zip:", 'Nieuwe app', '')
     if (-not $id) { return }
-    if ($id -notmatch '^[A-Za-z0-9_-]+$') { Show-Error (T 'Alleen letters, cijfers, - en _ (geen spaties).' 'Only letters, digits, - and _ (no spaces).'); return }
+    if ($id -notmatch '^[A-Za-z0-9_-]+$') { Show-Error 'Alleen letters, cijfers, - en _ (geen spaties).'; return }
     $dir = Join-Path $AppsRoot $id
-    if (Test-Path $dir) { Show-Error (T "Apps\$id bestaat al." "Apps\$id already exists."); return }
+    if (Test-Path $dir) { Show-Error "Apps\$id bestaat al."; return }
     New-Item $dir -ItemType Directory -Force | Out-Null
     Copy-Item (Join-Path (Join-Path $KitRoot '_Template') '*') $dir
-    # Template in the Builder language: *.en.* for English, otherwise the Dutch files
-    foreach ($f in 'app.psd1', 'install-app.cmd', 'uninstall-app.cmd')
-    {
-        $enFile = Join-Path $dir ([System.IO.Path]::GetFileNameWithoutExtension($f) + '.en' + [System.IO.Path]::GetExtension($f))
-        if (Test-Path $enFile)
-        {
-            if ($script:Lang -eq 'en') { Move-Item -Path $enFile -Destination (Join-Path $dir $f) -Force } else { Remove-Item -Path $enFile -Force }
-        }
-    }
     $d = Read-AppPsd1 (Join-Path $dir 'app.psd1')
     $d.AppId = $id; $d.AppName = $id; $d.DetectName = $id; $d.Processes = @()
     [System.IO.File]::WriteAllText((Join-Path $dir 'app.psd1'), (ConvertTo-Psd1Text $d), (New-Object System.Text.UTF8Encoding $true))
     Update-AppList
     $ui.LstApps.SelectedItem = $id
-    Set-Status (T "Nieuwe app $id aangemaakt. Begin met het kiezen van de installer." "New app $id created. Start by picking the installer.")
+    Set-Status "Nieuwe app $id aangemaakt. Begin met het kiezen van de installer."
 })
 
 $ui.BtnInstaller.Add_Click({
-    # Tab 1: the installer of the app itself = the main component
+    # Tabblad 1: de installer van de app zelf = het hoofdonderdeel
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.Filter = 'Installers (*.exe;*.msi)|*.exe;*.msi'
+    Set-StartFolder $dlg
     if (-not $dlg.ShowDialog()) { return }
+    $script:LastInstallerPath = $dlg.FileName   # startpunt voor 'Kiezen...' bij 'Pakket opslaan in'
     $src = $dlg.FileName; $dir = Get-AppFolder
     $name = [System.IO.Path]::GetFileName($src)
 
-    # Previous installer (old main component) and loose installers that are not a component: clean up?
+    # Vorige installer (oud hoofdonderdeel) en losse installers die geen onderdeel zijn: opruimen?
     $oldMain = $script:Components | Where-Object { $_.Main } | Select-Object -First 1
     $oldIndex = if ($oldMain) { $script:Components.IndexOf($oldMain) } else { -1 }
     $usedFiles = @($script:Components | Where-Object { -not $_.Main } | ForEach-Object { $_.File })
@@ -2362,8 +2344,8 @@ $ui.BtnInstaller.Add_Click({
     if ($old.Count -gt 0)
     {
         $list = ($old | ForEach-Object { "  - $($_.Name)" }) -join "`n"
-        $q = T "In de app-map staan nog deze installers:`n$list`n`nZijn dat oude versies? Kies Ja om ze te verwijderen, zodat ze niet in het nieuwe pakket komen.`n(Andere onderdelen uit tabblad 2 blijven gewoon staan.)" "The app folder still has these installers:`n$list`n`nAre these old versions? Choose Yes to delete them, so they do not end up in the new package.`n(Other components from tab 2 stay.)"
-        if ([System.Windows.MessageBox]::Show($q, (T 'Oude installers opruimen' 'Clean up old installers'), 'YesNo', 'Question') -eq 'Yes')
+        $q = "In de app-map staan nog deze installers:`n$list`n`nZijn dat oude versies? Kies Ja om ze te verwijderen, zodat ze niet in het nieuwe pakket komen.`n(Andere onderdelen uit tabblad 2 blijven gewoon staan.)"
+        if ([System.Windows.MessageBox]::Show($q, 'Oude installers opruimen', 'YesNo', 'Question') -eq 'Yes')
         {
             $old | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
         }
@@ -2379,33 +2361,34 @@ $ui.BtnInstaller.Add_Click({
     }
 
     $ui.TxtInstaller.Text = $name
-    $ui.TxtInstallerInfo.Text = "$(T 'Herkend' 'Detected'): $($info.Kind)$(if ($info.ProductName) { ' - ' + $info.ProductName })$(if ($info.Version) { ' ' + $info.Version }). $($info.Note) $(T 'Parameters en extra onderdelen: tabblad 2.' 'Parameters and extra components: tab 2.')"
+    $ui.TxtInstallerInfo.Text = "Herkend: $($info.Kind)$(if ($info.ProductName) { ' - ' + $info.ProductName })$(if ($info.Version) { ' ' + $info.Version }). $($info.Note) Parameters en extra onderdelen: tabblad 2."
     if ($info.Version) { $ui.TxtVersion.Text = $info.Version }
     if ($info.ProductName)
     {
         if (-not $ui.TxtAppName.Text -or $ui.TxtAppName.Text -eq $script:CurrentApp) { $ui.TxtAppName.Text = $info.ProductName }
         if (-not $ui.TxtDetectName.Text -or $ui.TxtDetectName.Text -eq $script:CurrentApp) { $ui.TxtDetectName.Text = $info.ProductName }
     }
+    if ($info.Kind -eq 'MSI' -and $info.ProductCode) { Set-DetectionFromMsi $info }
 
     if (-not $ui.ChkAutoSteps.IsChecked)
     {
-        $q = T 'De installatiestappen zijn met de hand geschreven. Voortaan automatisch maken uit de onderdelen (tabblad 2)?' 'The installation steps were written by hand. Create them automatically from the components (tab 2) from now on?'
-        if ([System.Windows.MessageBox]::Show($q, (T 'Installer gekozen' 'Installer chosen'), 'YesNo', 'Question') -eq 'Yes') { $ui.ChkAutoSteps.IsChecked = $true }
+        $q = 'De installatiestappen zijn met de hand geschreven. Voortaan automatisch maken uit de onderdelen (tabblad 2)?'
+        if ([System.Windows.MessageBox]::Show($q, 'Installer gekozen', 'YesNo', 'Question') -eq 'Yes') { $ui.ChkAutoSteps.IsChecked = $true }
     }
     Update-InstallPreview
 
-    if (-not $ui.TxtUninstallCmd.Text.Trim() -or $ui.TxtUninstallCmd.Text -match 'MijnApp|MyApp|VUL IN|FILL IN')
+    if (-not $ui.TxtUninstallCmd.Text.Trim() -or $ui.TxtUninstallCmd.Text -match 'MijnApp|VUL IN')
     {
         $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
     }
     Update-FileList
-    Set-Status (T "Installer $name toegevoegd als hoofdonderdeel. Controleer versie, processen en tabblad 2." "Installer $name added as main component. Check version, processes and tab 2.")
+    Set-Status "Installer $name toegevoegd als hoofdonderdeel. Controleer versie, processen en tabblad 2."
 })
 
 $ui.BtnGenerate.Add_Click({
     $main = Get-MainComponent
-    if (-not $main) { Show-Error (T 'Voeg eerst een onderdeel toe (tabblad 1 of 2).' 'Add a component first (tab 1 or 2).'); return }
-    if ($ui.TxtUninstallCmd.Text.Trim() -and [System.Windows.MessageBox]::Show((T 'De huidige verwijderstappen vervangen?' 'Replace the current uninstall steps?'), (T 'Opnieuw maken' 'Recreate'), 'YesNo', 'Question') -ne 'Yes') { return }
+    if (-not $main) { Show-Error 'Voeg eerst een onderdeel toe (tabblad 1 of 2).'; return }
+    if ($ui.TxtUninstallCmd.Text.Trim() -and [System.Windows.MessageBox]::Show('De huidige verwijderstappen vervangen?', 'Opnieuw maken', 'YesNo', 'Question') -ne 'Yes') { return }
     $info = @{ Kind = $main.Kind; ProductCode = $main.ProductCode }
     $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
 })
@@ -2413,7 +2396,8 @@ $ui.BtnGenerate.Add_Click({
 $ui.BtnCompAdd.Add_Click({
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.Multiselect = $true
-    $dlg.Filter = (T 'Installatiebestanden' 'Installation files') + ' (*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg)|*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg|' + (T 'Alle bestanden' 'All files') + ' (*.*)|*.*'
+    Set-StartFolder $dlg
+    $dlg.Filter = 'Installatiebestanden (*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg)|*.exe;*.msi;*.msp;*.ps1;*.cmd;*.bat;*.reg|Alle bestanden (*.*)|*.*'
     if (-not $dlg.ShowDialog()) { return }
     $notes = @()
     foreach ($fn in $dlg.FileNames)
@@ -2421,21 +2405,21 @@ $ui.BtnCompAdd.Add_Click({
         $info = Add-ComponentFile $fn $false
         $notes += "$($info.File): $($info.Kind). $($info.Note)"
     }
-    # Put new components before the main component (usually they are preparations, such as a runtime)
+    # Nieuwe onderdelen vóór het hoofdonderdeel zetten (meestal zijn het voorbereidingen, zoals een runtime)
     $main = $script:Components | Where-Object { $_.Main } | Select-Object -First 1
     if ($main)
     {
         $mi = $script:Components.IndexOf($main)
         if ($mi -lt $script:Components.Count - 1) { $script:Components.Move($mi, $script:Components.Count - 1) }
     }
-    $ui.TxtCompInfo.Text = ($notes -join '  |  ') + (T '  Controleer de parameters; dubbelklik om te wijzigen.' '  Check the parameters; double-click to change.')
+    $ui.TxtCompInfo.Text = ($notes -join '  |  ') + '  Controleer de parameters; dubbelklik om te wijzigen.'
     Update-InstallPreview; Update-FileList
 })
 
 $ui.BtnCompRemove.Add_Click({
     $c = $ui.DgComponents.SelectedItem
-    if (-not $c) { Show-Error (T 'Selecteer eerst een onderdeel.' 'Select a component first.'); return }
-    $r = [System.Windows.MessageBox]::Show((T "Onderdeel $($c.File) verwijderen.`n`nOok het bestand uit de app-map verwijderen?" "Remove component $($c.File).`n`nAlso delete the file from the app folder?"), (T 'Onderdeel verwijderen' 'Remove component'), 'YesNoCancel', 'Question')
+    if (-not $c) { Show-Error 'Selecteer eerst een onderdeel.'; return }
+    $r = [System.Windows.MessageBox]::Show("Onderdeel $($c.File) verwijderen.`n`nOok het bestand uit de app-map verwijderen?", 'Onderdeel verwijderen', 'YesNoCancel', 'Question')
     if ($r -eq 'Cancel') { return }
     [void]$script:Components.Remove($c)
     if ($r -eq 'Yes') { Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $c.File) -Force -ErrorAction SilentlyContinue }
@@ -2453,10 +2437,10 @@ $ui.BtnCompDown.Add_Click({
     if ($i -lt $script:Components.Count - 1) { $script:Components.Move($i, $i + 1); Update-InstallPreview }
 })
 
-# After editing a cell (parameters, exit codes, main) update the preview
+# Na het wijzigen van een cel (parameters, exitcodes, hoofd) het voorbeeld bijwerken
 $ui.DgComponents.Add_CellEditEnding({
     $null = $Window.Dispatcher.BeginInvoke([action]{
-        # Only one main component at a time
+        # Maar één hoofdonderdeel tegelijk
         $sel = $ui.DgComponents.SelectedItem
         if ($sel -and $sel.Main) { foreach ($c in $script:Components) { if ($c -ne $sel) { $c.Main = $false } } ; $ui.DgComponents.Items.Refresh() }
         Update-InstallPreview
@@ -2465,12 +2449,28 @@ $ui.DgComponents.Add_CellEditEnding({
 $ui.DgComponents.Add_CurrentCellChanged({ Update-InstallPreview })
 $ui.TxtPreInstall.Add_TextChanged({ Update-InstallPreview })
 $ui.CmbWindow.Add_SelectionChanged({ Update-WindowHint })
+$ui.InfoTimes.Add_MouseLeftButtonUp({
+    $msg = "Tijdblokken bepalen wanneer de popup en de installatie mogen komen.`n`n" +
+           "Zo vul je ze in:`n" +
+           "- Elk blok als van-tot, in 24-uurs tijd met een dubbele punt: 08:00-09:00`n" +
+           "- Meerdere blokken scheid je met een komma`n" +
+           "- Over middernacht mag: 22:00-06:00`n" +
+           "- De eindtijd telt niet mee: bij 08:00-09:00 kan de popup om 08:59 nog komen, om 09:00 niet meer`n`n" +
+           "Voorbeelden:`n" +
+           "  08:00-17:00`t`t`t`thele werkdag`n" +
+           "  08:00-09:00, 12:00-13:00, 16:00-17:00`tinloggen, pauze, afsluiten`n" +
+           "  22:00-06:00`t`t`t`t's avonds en 's nachts`n`n" +
+           "Met 'Alleen buiten de gekozen tijden' werkt het andersom: dan komt de popup juist buiten de blokken.`n`n" +
+           "Let op: Intune controleert met tussenpozen, niet continu. Bij korte blokken (een uur) kan de popup daardoor soms pas in een volgend blok komen. " +
+           "Zet 'Hoe lang duurt een keer uitstellen?' korter (bijv. 3 uur) als de popup dezelfde dag in een volgend blok terug moet komen."
+    [void][System.Windows.MessageBox]::Show($msg, 'Tijdblokken invullen', 'OK', 'Information')
+})
 $ui.ChkIdle.Add_Click({ Update-WindowHint })
 $ui.TxtPostInstall.Add_TextChanged({ Update-InstallPreview })
 $ui.ChkAutoSteps.Add_Click({
     if (-not $ui.ChkAutoSteps.IsChecked)
     {
-        Set-Status (T 'Automatisch maken staat uit: je kunt install-app.cmd nu met de hand aanpassen.' 'Create automatically is off: you can now edit install-app.cmd by hand.')
+        Set-Status 'Automatisch maken staat uit: je kunt install-app.cmd nu met de hand aanpassen.'
     }
     Update-InstallPreview
 })
@@ -2478,31 +2478,42 @@ $ui.TxtAppName.Add_TextChanged({ if ($ui.ChkAutoSteps.IsChecked) { Update-Instal
 
 $ui.BtnIcon.Add_Click({
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
-    $dlg.Filter = (T 'Afbeeldingen' 'Images') + ' (*.svg;*.ico;*.png;*.jpg;*.jpeg;*.bmp)|*.svg;*.ico;*.png;*.jpg;*.jpeg;*.bmp'
+    $dlg.Filter = 'Afbeeldingen (*.svg;*.ico;*.png;*.jpg;*.jpeg;*.bmp)|*.svg;*.ico;*.png;*.jpg;*.jpeg;*.bmp'
+    Set-StartFolder $dlg
     if (-not $dlg.ShowDialog()) { return }
     try
     {
-        if ([System.IO.Path]::GetExtension($dlg.FileName) -ieq '.svg') { Set-Status (T 'SVG wordt omgezet naar een icoon...' 'Converting SVG to an icon...') }
+        if ([System.IO.Path]::GetExtension($dlg.FileName) -ieq '.svg') { Set-Status 'SVG wordt omgezet naar een icoon...' }
         New-IcoFromImage $dlg.FileName (Join-Path (Get-AppFolder) 'app.ico'); Update-IconPreview; Update-FileList
-        # Keep the original, so you can create a sharper version later (also kept in the version history)
+        # Origineel bewaren, zodat je later een scherpere versie kunt maken (gaat ook mee in de versiegeschiedenis)
         if ([System.IO.Path]::GetExtension($dlg.FileName) -ieq '.svg') {
             Copy-Item -LiteralPath $dlg.FileName -Destination (Join-Path (Get-AppFolder) 'logo.svg') -Force
-            Update-FileList; Set-Status (T 'SVG-logo omgezet naar app.ico (256 x 256).' 'SVG logo converted to app.ico (256 x 256).')
+            Update-FileList; Set-Status 'SVG-logo omgezet naar app.ico (256 x 256).'
         }
     }
-    catch { Show-Error "$(T 'Logo kon niet worden omgezet' 'The logo could not be converted'): $($_.Exception.Message)" }
+    catch { Show-Error "Logo kon niet worden omgezet: $($_.Exception.Message)" }
 })
 
 $ui.BtnIconFromInstaller.Add_Click({
     $inst = $ui.TxtInstaller.Text
-    if (-not $inst -or $inst -notlike '*.exe') { Show-Error (T 'Dit kan alleen met een .exe-installer. Kies anders zelf een logo.' 'This only works with an .exe installer. Otherwise pick a logo yourself.'); return }
+    if (-not $inst -or $inst -notmatch '\.(exe|msi)$') { Show-Error 'Dit kan alleen met een .exe- of .msi-installer. Kies anders zelf een logo.'; return }
+    $work = $null
     try
     {
-        New-IcoFromImage (Join-Path (Get-AppFolder) $inst) (Join-Path (Get-AppFolder) 'app.ico')
+        $source = Join-Path (Get-AppFolder) $inst
+        if ($inst -like '*.msi')
+        {
+            $work = Join-Path ([System.IO.Path]::GetTempPath()) ("AppKitMsiIcon_" + [guid]::NewGuid().ToString('N'))
+            New-Item -Path $work -ItemType Directory -Force | Out-Null
+            $source = Get-MsiIcon -MsiPath $source -WorkDir $work
+            if (-not $source) { Show-Error 'Deze MSI bevat geen pictogram. Kies zelf een logo (.svg, .png of .ico).'; return }
+        }
+        New-IcoFromImage $source (Join-Path (Get-AppFolder) 'app.ico')
         Update-IconPreview; Update-FileList
-        Set-Status (T 'Logo uit de installer gehaald. Is hij wazig? Kies dan een groter logo (.png of .ico).' 'Logo extracted from the installer. Is it blurry? Then pick a larger logo (.svg, .png or .ico).')
+        Set-Status 'Logo uit de installer gehaald. Is hij wazig? Kies dan een groter logo (.svg, .png of .ico).'
     }
-    catch { Show-Error "$(T 'Logo kon niet uit de installer worden gehaald' 'The logo could not be extracted from the installer'): $($_.Exception.Message)" }
+    catch { Show-Error "Logo kon niet uit de installer worden gehaald: $($_.Exception.Message)" }
+    finally { if ($work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue } }
 })
 
 $ui.TxtAccent.Add_TextChanged({ Update-AccentPreview })
@@ -2510,6 +2521,7 @@ $ui.TxtAccent.Add_TextChanged({ Update-AccentPreview })
 $ui.BtnAddFiles.Add_Click({
     $dlg = New-Object Microsoft.Win32.OpenFileDialog
     $dlg.Multiselect = $true
+    Set-StartFolder $dlg
     if (-not $dlg.ShowDialog()) { return }
     foreach ($f in $dlg.FileNames) { Copy-Item -LiteralPath $f -Destination (Get-AppFolder) -Force }
     Update-FileList
@@ -2519,7 +2531,7 @@ $ui.BtnRemoveFile.Add_Click({
     $sel = [string]$ui.LstFiles.SelectedItem
     if (-not $sel) { return }
     $name = ($sel -split '   \(')[0]
-    if ([System.Windows.MessageBox]::Show((T "$name verwijderen uit de app-map?" "Delete $name from the app folder?"), (T 'Verwijderen' 'Delete'), 'YesNo', 'Question') -eq 'Yes')
+    if ([System.Windows.MessageBox]::Show("$name verwijderen uit de app-map?", 'Verwijderen', 'YesNo', 'Question') -eq 'Yes')
     {
         Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $name) -Force
         Update-FileList; Update-IconPreview
@@ -2527,8 +2539,30 @@ $ui.BtnRemoveFile.Add_Click({
 })
 
 $ui.BtnOpenAppFolder.Add_Click({ if (Get-AppFolder) { Start-Process explorer.exe (Get-AppFolder) } })
+$ui.BtnOutputFolder.Add_Click({
+    Add-Type -AssemblyName System.Windows.Forms
+    $f = New-Object System.Windows.Forms.FolderBrowserDialog
+    $f.Description = 'Kies de map waarin het pakket (install.intunewin, Intune-scripts, Bron) komt.'
+    $f.ShowNewFolderButton = $true
+    $cur = $ui.TxtOutputFolder.Text.Trim()
+    # Startpunt: de versiemap van de zojuist gekozen installer, anders de huidige map, anders de standaardmap
+    $start = @()
+    if ($script:LastInstallerPath) { $start += (Get-VersionFolder $script:LastInstallerPath) }
+    if ($cur) { $start += $cur; $start += (Split-Path $cur -Parent) }
+    $start += $KitSettings.InstallerMap
+    foreach ($c in $start) { if ($c -and (Test-Path -LiteralPath $c)) { $f.SelectedPath = $c; break } }
+    if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)
+    {
+        # Gekozen versiemap -> <versiemap>\intune-package (PakketSubmap in _Kit\Instellingen.psd1)
+        $chosen = $f.SelectedPath.TrimEnd('\')
+        $sub = $KitSettings.PakketSubmap
+        $ui.TxtOutputFolder.Text = if ($sub -and (Split-Path $chosen -Leaf) -ine $sub) { Join-Path $chosen $sub } else { $chosen }
+        Set-Status "Pakket komt in: $($ui.TxtOutputFolder.Text)"
+    }
+})
+
 $ui.BtnOpenOutput.Add_Click({
-    $o = Join-Path (Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp) $ui.TxtVersion.Text.Trim()
+    $o = Get-OutputRoot
     if (-not (Test-Path $o)) { $o = Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp }
     if (Test-Path $o) { Start-Process explorer.exe $o }
 })
@@ -2540,46 +2574,42 @@ $ui.BtnVerPreview.Add_Click({
     $det = $script:SelectedVersion
     if (-not $det -or -not $det.Data) { return }
     $kind = [string]$ui.CmbVerPreview.SelectedItem.Tag
-    $lang = Get-TextLanguage
-    Show-Preview $kind $det.Data $(if ($lang -eq 'en') { $det.StdEn } else { $det.Std }) $det.Icon $lang
+    Show-Preview $kind $det.Data $det.Std $det.Icon
 })
 $ui.BtnVerOpen.Add_Click({ $v = Get-SelectedVersion; if ($v) { Start-Process explorer.exe $v.Path } })
 
 $ui.BtnVerRestore.Add_Click({
-    # Full copy of this build (settings, texts, steps, installers) as the working version
+    # Volledige kopie van deze build (instellingen, teksten, stappen, installers) als werkversie klaarzetten
     $v = Get-SelectedVersion
     if (-not $v) { return }
-    if (-not $v.HasBron) { Show-Error (T "Van build $($v.Label) zijn geen gegevens bewaard." "No data was kept for build $($v.Label)."); return }
-    $q = T ("Een kopie maken van $($v.Label) en die als werkversie klaarzetten?`n`n" +
-            "Wat nu in de Builder staat (en nog niet gebouwd is) wordt daarmee vervangen. Gebouwde versies blijven altijd bewaard.`n`n" +
-            "Daarna:`n- zelfde versienummer houden = deze versie verbeteren (de huidige build gaat naar het archief)`n" +
-            "- nieuwe installer of nieuw versienummer = een nieuwe versie") `
-           ("Make a copy of $($v.Label) and set it up as the working version?`n`n" +
-            "What is in the Builder now (and not built yet) is replaced. Built versions are always kept.`n`n" +
-            "Then:`n- keep the same version number = improve this version (the current build goes to the archive)`n" +
-            "- new installer or new version number = a new version")
-    if ([System.Windows.MessageBox]::Show($q, (T 'Kopie maken en aanpassen' 'Copy and edit'), 'YesNo', 'Question') -ne 'Yes') { return }
+    if (-not $v.HasBron) { Show-Error "Van build $($v.Label) zijn geen gegevens bewaard."; return }
+    $q = "Een kopie maken van $($v.Label) en die als werkversie klaarzetten?`n`n" +
+         "Wat nu in de Builder staat (en nog niet gebouwd is) wordt daarmee vervangen. Gebouwde versies blijven altijd bewaard.`n`n" +
+         "Daarna:`n- zelfde versienummer houden = deze versie verbeteren (de huidige build gaat naar het archief)`n" +
+         "- nieuwe installer of nieuw versienummer = een nieuwe versie"
+    if ([System.Windows.MessageBox]::Show($q, 'Kopie maken en aanpassen', 'YesNo', 'Question') -ne 'Yes') { return }
 
-    $bronDir = Get-BuildPart $v.Path 'Source'
+    $bronDir = Join-Path $v.Path 'Bron'
     $appDir  = Get-AppFolder
-    Set-Status "$(T 'Kopie maken van' 'Copying') $($v.Label)..."
+    Set-Status "Kopie maken van $($v.Label)..."
     Get-ChildItem $appDir -Force | Remove-Item -Recurse -Force
-    Get-ChildItem $bronDir -Force | Where-Object { $_.Name -notin 'DefaultTexts.psd1', 'Standaardteksten.psd1' } | Copy-Item -Destination $appDir -Recurse -Force
+    Get-ChildItem $bronDir -Force | Where-Object { $_.Name -ne 'Standaardteksten.psd1' } | Copy-Item -Destination $appDir -Recurse -Force
     Import-App $script:CurrentApp
     $ui.Tabs.SelectedIndex = 0
 
-    $msg = T "Kopie van $($v.Label) staat klaar. Pas aan wat nodig is en klik op Bouw pakket." "Copy of $($v.Label) is ready. Change what is needed and click Build package."
-    if (-not $v.HasInstallers) { $msg += T ' Let op: in deze oude build zijn de installers niet bewaard; voeg ze opnieuw toe.' ' Note: this old build did not keep the installers; add them again.' }
+    $msg = "Kopie van $($v.Label) staat klaar. Pas aan wat nodig is en klik op Bouw pakket."
+    if (-not $v.HasInstallers) { $msg += ' Let op: in deze oude build zijn de installers niet bewaard; voeg ze opnieuw toe.' }
     Set-Status $msg
 })
 
 $ui.BtnVerDelete.Add_Click({
     $v = Get-SelectedVersion
     if (-not $v) { return }
-    if ([System.Windows.MessageBox]::Show((T "Versie $($v.Version) met install.intunewin en alle bestanden in die map verwijderen?" "Delete version $($v.Version) with install.intunewin and all files in that folder?"), (T 'Versie verwijderen' 'Delete version'), 'YesNo', 'Warning') -ne 'Yes') { return }
+    if ([System.Windows.MessageBox]::Show("Versie $($v.Version) met install.intunewin en alle bestanden in deze map verwijderen?`n`n$($v.Path)", 'Versie verwijderen', 'YesNo', 'Warning') -ne 'Yes') { return }
     Remove-Item -LiteralPath $v.Path -Recurse -Force
+    if ($v.Pointer) { Remove-Item -LiteralPath (Split-Path $v.Pointer -Parent) -Recurse -Force -ErrorAction SilentlyContinue }
     Update-VersionList
-    Set-Status (T "Versie $($v.Version) verwijderd." "Version $($v.Version) deleted.")
+    Set-Status "Versie $($v.Version) verwijderd."
 })
 
 $ui.BtnPrevConsent.Add_Click({ Show-Preview 'consent' })
@@ -2590,38 +2620,80 @@ $ui.BtnPrevRestartForced.Add_Click({ Show-Preview 'restartforced' })
 $ui.BtnPrevUninstalling.Add_Click({ Show-Preview 'uninstalling' })
 $ui.BtnPrevUninstalled.Add_Click({ Show-Preview 'uninstalled' })
 $ui.CmbRestart.Add_SelectionChanged({ Update-RestartPanel })
+$ui.CmbDetect.Add_SelectionChanged({ Update-DetectPanels })
+$ui.ChkDetectAnyVersion.Add_Click({ Update-DetectPanels })
+$ui.TxtDetectName.Add_TextChanged({ if ([string]$ui.CmbDetect.SelectedItem.Tag -eq 'AppsEnOnderdelen') { Update-DetectPanels } })
+$ui.BtnDetectTest.Add_Click({
+    # Het detectiescript hier uitvoeren (64-bit PowerShell, zoals Intune) en de uitkomst tonen
+    $d = Read-Form
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "AppKit_detect_$(Get-Random).ps1"
+    try
+    {
+        [System.IO.File]::WriteAllText($tmp, (Get-DetectionScriptText $d), (New-Object System.Text.UTF8Encoding $true))
+        $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $psi = New-Object System.Diagnostics.ProcessStartInfo $ps, "-NoProfile -ExecutionPolicy Bypass -File `"$tmp`""
+        $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+        $psi.EnvironmentVariables['APPKIT_DETECT_DEBUG'] = '1'   # uitleg op de foutuitvoer; Intune zet dit nooit
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $out = $p.StandardOutput.ReadToEnd(); $err = $p.StandardError.ReadToEnd()
+        if (-not $p.WaitForExit(30000)) { $p.Kill() }
+        $brush = New-Object System.Windows.Media.BrushConverter
+        $why = (("$err" -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -First 6) -join "`n  "
+        if ("$out".Trim())
+        {
+            $ui.TxtDetectResult.Foreground = $brush.ConvertFromString('#2E7D32')
+            $ui.TxtDetectResult.Text = "  Gedetecteerd op deze pc.$(if ($why) { "`n  $why" } else { "`n  $("$out".Trim())" })"
+        }
+        else
+        {
+            $ui.TxtDetectResult.Foreground = $brush.ConvertFromString('#C62828')
+            $ui.TxtDetectResult.Text = "  Niet gedetecteerd op deze pc.$(if ($why) { "`n  $why" })"
+        }
+    }
+    catch { Show-Error "Testen lukte niet: $($_.Exception.Message)" }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+})
 $ui.BtnPrevInstalling.Add_Click({ Show-Preview 'installing' })
 $ui.BtnPrevSuccess.Add_Click({ Show-Preview 'success' })
 $ui.BtnPrevError.Add_Click({ Show-Preview 'error' })
-
-$ui.CmbTextLang.Add_SelectionChanged({ Update-TextPanels })
-
-# Builder language: save in _Kit\Settings.psd1 and restart the Builder
-Set-ComboByTag $ui.CmbUiLang $script:Lang
-$ui.CmbUiLang.Add_SelectionChanged({
-    $new = [string]$ui.CmbUiLang.SelectedItem.Tag
-    if (-not $new -or $new -eq $script:Lang) { return }
-    if ($script:CurrentApp -and -not (Save-App)) { Set-ComboByTag $ui.CmbUiLang $script:Lang; return }
-    Save-KitLanguage $new
-    $q = if ($new -eq 'en') { "The language is now English (Builder, messages, log files and generated files).`n`nRestart the Builder now?" }
-         else { "De taal is nu Nederlands (Builder, meldingen, logbestanden en gemaakte bestanden).`n`nDe Builder nu opnieuw starten?" }
-    if ([System.Windows.MessageBox]::Show($q, 'AppUpdateKit Builder', 'YesNo', 'Question') -eq 'Yes')
-    {
-        Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`"")
-        $Window.Close()
-    }
-})
 
 $ui.BtnSave.Add_Click({ [void](Save-App) })
 $ui.BtnBuild.Add_Click({ Start-Build })
 #endregion
 
+function Select-InstallerMap([switch]$FirstRun)
+{
+    # Standaardmap voor installers kiezen en opslaan in _Kit\Instellingen.psd1
+    Add-Type -AssemblyName System.Windows.Forms
+    $f = New-Object System.Windows.Forms.FolderBrowserDialog
+    $f.Description = 'Kies de map waar "Kiezen..." standaard opent bij het kiezen van een installer (bijv. I:\Software\projecten).'
+    $f.ShowNewFolderButton = $false
+    if ($KitSettings.InstallerMap -and (Test-Path -LiteralPath $KitSettings.InstallerMap)) { $f.SelectedPath = $KitSettings.InstallerMap }
+    if ($f.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    try
+    {
+        Save-InstallerMap $f.SelectedPath
+        Set-Status "Standaardmap voor installers: $($KitSettings.InstallerMap)"
+    }
+    catch { Show-Error "De standaardmap kon niet worden opgeslagen in _Kit\Instellingen.psd1: $($_.Exception.Message)" }
+}
+
+$ui.BtnInstallerMap.Add_Click({ Select-InstallerMap })
+
+# Eerste keer opstarten: standaardmap voor installers nog niet ingesteld? Eén keer per gebruiker vragen.
+$Window.Add_ContentRendered({
+    $marker = Join-Path (Join-Path $env:LOCALAPPDATA 'AppUpdateKit') 'standaardmap-gevraagd.txt'
+    if ($KitSettings.InstallerMap -or (Test-Path $marker)) { return }
+    try { New-Item -Path (Split-Path $marker -Parent) -ItemType Directory -Force | Out-Null; Set-Content -Path $marker -Value (Get-Date -Format 's') } catch { }
+    $q = "Welkom bij de AppUpdateKit Builder.`n`nWil je een standaardmap voor installers instellen? Bij 'Kiezen...' opent het venster dan meteen in die map, bijvoorbeeld I:\Software\projecten.`n`nJe kunt dit later wijzigen met de knop Standaardmap... (links)."
+    if ([System.Windows.MessageBox]::Show($Window, $q, 'Standaardmap instellen', 'YesNo', 'Question') -eq 'Yes') { Select-InstallerMap -FirstRun }
+})
+
 try
 {
     Update-BuilderShortcut
     Update-AppList
-    Set-Status (T 'Kies links een app, of maak een nieuwe aan.' 'Pick an app on the left, or create a new one.')
+    Set-Status 'Kies links een app, of maak een nieuwe aan.'
     [void]$Window.ShowDialog()
 }
 catch

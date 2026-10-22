@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
-    Writes how many milliseconds the user has not used the mouse or keyboard.
-    Runs in the user's session (started by AppUI-Launcher.ps1). Do NOT edit per app.
+    Schrijft weg hoeveel milliseconden de gebruiker niets met muis of toetsenbord heeft gedaan.
+    Draait in de sessie van de gebruiker (gestart door AppUI-Launcher.ps1). NIET aanpassen per app.
 #>
 param ([Parameter(Mandatory = $true)][string]$OutPath)
 

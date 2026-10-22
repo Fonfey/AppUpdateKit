@@ -1,19 +1,18 @@
 ﻿<#
 .SYNOPSIS
-    Shows the update popups to the logged-on user (runs AS the user). Do NOT edit per app.
+    Toont de update-vensters aan de ingelogde gebruiker (draait ALS de gebruiker). NIET aanpassen per app.
 
 .DESCRIPTION
-    Started by AppUI-Launcher.ps1 (running as SYSTEM) through a scheduled task.
-    All texts and settings come from a JSON file (-ConfigPath), so no text has to be pasted
-    into a script (no trouble with quotes or accented characters).
+    Wordt gestart door AppUI-Launcher.ps1 (die als SYSTEM draait) via een scheduled task.
+    Alle teksten en instellingen komen uit een JSON-bestand (-ConfigPath), zodat er geen
+    tekst in een script geplakt hoeft te worden (geen problemen met aanhalingstekens of é/ï).
 
-    Mode 'consent' : "Update available" window with the buttons Later / Update now.
-                     Writes 'Yes', 'No' or 'Timeout' to ResponsePath.
-    Mode 'forced'  : same window without "Later": the update starts after the countdown,
-                     or earlier with "Install now". Writes 'Yes' or 'Timeout'.
-    Mode 'toast'   : notification in the bottom-right corner, Windows 11 style.
+    Mode 'consent' : venster "Update beschikbaar" met de knoppen Later / Nu bijwerken.
+                     Schrijft 'Yes', 'No' of 'Timeout' naar ResponsePath.
+    Mode 'forced'  : zelfde venster, maar zonder "Later": de update start na de aftelklok
+                     vanzelf, of eerder met "Nu installeren". Schrijft 'Yes' of 'Timeout'.
+    Mode 'toast'   : melding rechtsonder in Windows 11-stijl.
                      Type: info | installing | success | error
-    Lang           : 'nl' or 'en' (language of the built-in button and helper texts)
 #>
 
 param (
@@ -23,13 +22,7 @@ param (
 
 $cfg = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-function T([string]$Nl, [string]$En)
-{
-    # Built-in texts in the user's language
-    if ($cfg.Lang -eq 'en') { return $En } else { return $Nl }
-}
-
-# Colour of the header and the main button (AccentColor in app.psd1)
+# Kleur van de kop en de hoofdknop (AccentColor in app.psd1)
 $accent = if ($cfg.AccentColor -match '^#[0-9A-Fa-f]{6}$') { $cfg.AccentColor } else { '#185FA5' }
 
 function Write-PopupLog
@@ -37,7 +30,7 @@ function Write-PopupLog
     param ([string]$Text)
     if (-not $cfg.LogPath) { return }
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - [popup] $Text"
-    Add-Content -Path $cfg.LogPath -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    Add-Content -Path $cfg.LogPath -Value $line -ErrorAction SilentlyContinue
 }
 
 function Set-Response
@@ -64,7 +57,7 @@ function Set-Icon
     }
 }
 
-# Shared button style (rounded corners)
+# Gedeelde knopstijl (afgeronde hoeken, zoals in de mockup)
 $buttonStyle = @'
 <Style x:Key="Btn" TargetType="Button">
   <Setter Property="Padding" Value="18,8"/>
@@ -88,7 +81,7 @@ $buttonStyle = @'
 '@
 
 ##================================================
-## Consent window: "Update available"
+## Toestemmingsvenster: "Update beschikbaar"
 ##================================================
 $consentXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -137,7 +130,7 @@ $consentXaml = @"
 "@
 
 ##================================================
-## Toast notification, bottom right
+## Toastmelding rechtsonder
 ##================================================
 $toastXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -201,8 +194,6 @@ function Show-Consent
     $c.Heading.Text    = $cfg.Heading
     $c.SubHeading.Text = $cfg.SubHeading
     $c.Message.Text    = $cfg.Message
-    $c.BtnLater.Content = T 'Later' 'Later'
-    $c.BtnNow.Content   = T 'Nu bijwerken' 'Update now'
 
     $forced = ($cfg.Mode -eq 'forced')
     $setWarning = {
@@ -215,29 +206,29 @@ function Show-Consent
     }
 
     $remaining = [int]$cfg.Remaining
-    $what = if ($cfg.IsNew) { T 'de installatie' 'the installation' } else { T 'de update' 'the update' }
+    $what = if ($cfg.IsNew) { 'de installatie' } else { 'de update' }
     if ($cfg.InfoOverride)
     {
-        # Own info text (e.g. the restart prompt) instead of the postpone text
+        # Eigen infotekst (bijv. de herstartmelding) in plaats van de uitsteltekst
         if ($cfg.InfoWarning) { & $setWarning $cfg.InfoOverride } else { $c.InfoText.Text = $cfg.InfoOverride }
         if ($forced) { $c.BtnLater.Visibility = 'Collapsed' }
     }
     elseif ($forced)
     {
-        # Postponing is no longer possible: only "Install now", otherwise it starts after the countdown
+        # Uitstellen kan niet meer: alleen "Nu installeren", anders start hij na de aftelklok vanzelf
         $c.BtnLater.Visibility = 'Collapsed'
-        $c.BtnNow.Content = T 'Nu installeren' 'Install now'
+        $c.BtnNow.Content = 'Nu installeren'
         & $setWarning $cfg.InfoText
     }
     elseif ($remaining -le 1)
     {
-        $extra = if ([int]$cfg.ForcedMinutes -gt 0) { T ", met $($cfg.ForcedMinutes) minuten waarschuwing vooraf" ", with $($cfg.ForcedMinutes) minutes warning in advance" } else { '' }
-        & $setWarning (T "Dit is de laatste keer dat je $what kunt uitstellen. Daarna wordt $($cfg.Heading) automatisch geïnstalleerd$extra." "This is the last time you can postpone $what. After that $($cfg.Heading) will be installed automatically$extra.")
+        $extra = if ([int]$cfg.ForcedMinutes -gt 0) { ", met $($cfg.ForcedMinutes) minuten waarschuwing vooraf" } else { '' }
+        & $setWarning "Dit is de laatste keer dat je $what kunt uitstellen. Daarna wordt $($cfg.Heading) automatisch geïnstalleerd$extra."
     }
     else
     {
-        $when = if ($cfg.LaterHint) { $cfg.LaterHint } else { T 'morgen' 'tomorrow' }
-        $c.InfoText.Text = T "Je kunt $what nog $remaining keer uitstellen. Kies je Later, dan vragen we het $when opnieuw." "You can postpone $what $remaining more times. If you choose Later, we will ask again $when."
+        $when = if ($cfg.LaterHint) { $cfg.LaterHint } else { 'morgen' }
+        $c.InfoText.Text = "Je kunt $what nog $remaining keer uitstellen. Kies je Later, dan vragen we het $when opnieuw."
     }
 
     if ($cfg.NowText)   { $c.BtnNow.Content = $cfg.NowText }
@@ -250,7 +241,7 @@ function Show-Consent
         param ($answer)
         $script:decided = $true
         Set-Response $answer
-        Write-PopupLog "Choice: $answer"
+        Write-PopupLog "Keuze: $answer"
         $w.Close()
     }
 
@@ -258,7 +249,7 @@ function Show-Consent
     $c.BtnLater.Add_Click({ & $finish 'No' })
     $c.Header.Add_MouseLeftButtonDown({ try { $w.DragMove() } catch { } })
 
-    # Close only through the buttons (Alt+F4 does not count as a choice)
+    # Venster alleen via de knoppen sluiten (Alt+F4 telt niet als keuze)
     $w.Add_Closing({ param($s, $e) if (-not $script:decided) { $e.Cancel = $true } })
 
     $timer = New-Object System.Windows.Threading.DispatcherTimer
@@ -274,16 +265,16 @@ function Show-Consent
         $clock = '{0:mm\:ss}' -f $left
         if ($forced)
         {
-            $c.Countdown.Text = if ($cfg.CountdownText) { $cfg.CountdownText.Replace('{tijd}', $clock) } else { T "De installatie start automatisch over $clock." "The installation starts automatically in $clock." }
+            $c.Countdown.Text = if ($cfg.CountdownText) { $cfg.CountdownText.Replace('{tijd}', $clock) } else { "De installatie start automatisch over $clock." }
         }
         else
         {
-            $c.Countdown.Text = if ($cfg.TimeoutText) { $cfg.TimeoutText.Replace('{tijd}', $clock) } else { T "Maak je geen keuze, dan vragen we het later opnieuw ($clock)." "If you do not choose, we will ask again later ($clock)." }
+            $c.Countdown.Text = if ($cfg.TimeoutText) { $cfg.TimeoutText.Replace('{tijd}', $clock) } else { "Maak je geen keuze, dan vragen we het later opnieuw ($clock)." }
         }
     })
     $timer.Start()
 
-    # Bottom right above the taskbar, without taking focus (no accidental Enter while typing)
+    # Rechtsonder boven de taakbalk, zonder de focus over te nemen (geen per ongeluk Enter tijdens typen)
     $w.Add_ContentRendered({ Move-ToBottomRight $w })
     $w.Add_Closed({ $w.Dispatcher.InvokeShutdown() })
     $w.Show()
@@ -313,12 +304,10 @@ function Show-ToastWindow
     $c.Sender.Text  = $cfg.Sender
     $c.Heading.Text = $cfg.Heading
     $c.Message.Text = $cfg.Message
-    $c.BtnClose.Content = T 'Sluiten' 'Close'
-    $c.BtnX.ToolTip     = T 'Sluiten' 'Close'
 
     switch ($cfg.Type)
     {
-        'installing' { $c.Badge.Background = Get-Brush '#378ADD'; $c.BadgeGlyph.Text = [char]0xE895; $c.Progress.Visibility = 'Visible'; $c.BtnClose.Content = T 'Verbergen' 'Hide' }
+        'installing' { $c.Badge.Background = Get-Brush '#378ADD'; $c.BadgeGlyph.Text = [char]0xE895; $c.Progress.Visibility = 'Visible'; $c.BtnClose.Content = 'Verbergen' }
         'success'    { $c.Badge.Background = Get-Brush '#3B9C3B'; $c.BadgeGlyph.Text = [char]0xE73E }
         'error'      { $c.Badge.Background = Get-Brush '#D13438'; $c.BadgeGlyph.Text = [char]0xE711 }
         default      { $c.Badge.Background = Get-Brush '#378ADD'; $c.BadgeGlyph.Text = [char]0xE946 }
@@ -327,7 +316,7 @@ function Show-ToastWindow
     $c.BtnX.Add_Click({ $w.Close() })
     $c.BtnClose.Add_Click({ $w.Close() })
 
-    # Place bottom right above the taskbar and fade in
+    # Rechtsonder boven de taakbalk plaatsen en rustig laten infaden
     $w.Add_ContentRendered({ Move-ToBottomRight $w })
     $w.Add_Closed({ $w.Dispatcher.InvokeShutdown() })
 
@@ -336,41 +325,41 @@ function Show-ToastWindow
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
         $elapsed = ((Get-Date) - $start).TotalSeconds
-        # 'installing' closes by itself once the installation is done
+        # 'installing' sluit vanzelf zodra de installatie klaar is
         if ($cfg.CloseFlagPath -and (Test-Path $cfg.CloseFlagPath)) { $timer.Stop(); $w.Close(); return }
         if ([int]$cfg.AutoCloseSeconds -gt 0 -and $elapsed -ge [int]$cfg.AutoCloseSeconds) { $timer.Stop(); $w.Close() }
     })
     $timer.Start()
 
-    # Show() instead of ShowDialog(): the notification does not steal focus
+    # Show() i.p.v. ShowDialog(): de melding pakt dan geen focus af van waar de gebruiker mee bezig is
     $w.Show()
     [System.Windows.Threading.Dispatcher]::Run()
 }
 
 try
 {
-    Write-PopupLog "Started: mode=$($cfg.Mode) type=$($cfg.Type) lang=$($cfg.Lang)"
+    Write-PopupLog "Gestart: mode=$($cfg.Mode) type=$($cfg.Type)"
     Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
     if ($cfg.Mode -in @('consent', 'forced')) { Show-Consent } else { Show-ToastWindow }
-    Write-PopupLog 'Popup closed'
+    Write-PopupLog 'Venster gesloten'
 }
 catch
 {
-    # Fall back to a standard Windows message box when the window cannot be built
-    Write-PopupLog "ERROR in popup, falling back to MessageBox: $($_.Exception.Message)"
+    # Terugvallen op een standaard Windows-melding als het venster niet kan worden opgebouwd
+    Write-PopupLog "FOUT in venster, terugval op MessageBox: $($_.Exception.Message)"
     try
     {
         Add-Type -AssemblyName PresentationFramework
         if ($cfg.Mode -eq 'consent')
         {
-            $question = if ($cfg.FallbackQuestion) { $cfg.FallbackQuestion } else { T 'Wil je nu bijwerken?' 'Do you want to update now?' }
+            $question = if ($cfg.FallbackQuestion) { $cfg.FallbackQuestion } else { 'Wil je nu bijwerken?' }
             $r = [System.Windows.MessageBox]::Show("$($cfg.Message)`n`n$question", $cfg.Heading, 'YesNo', 'Question')
             Set-Response $r.ToString()
         }
         elseif ($cfg.Mode -eq 'forced')
         {
-            # The installation starts after the countdown anyway
+            # De installatie start na 5 minuten sowieso (de installer wacht niet langer)
             [void][System.Windows.MessageBox]::Show($cfg.Message, $cfg.Heading, 'OK', 'Warning')
             Set-Response 'Yes'
         }

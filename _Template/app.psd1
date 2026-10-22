@@ -1,8 +1,7 @@
 ﻿#  ===========================================================================
 #   APP-GEGEVENS  -  vul de waarden tussen de aanhalingstekens in
 #  ===========================================================================
-#   Teksten die je leeg laat ('') komen uit _Kit\DefaultTexts.psd1.
-#   (Engelse versie van dit bestand: app.en.psd1 in _Template.)
+#   Teksten die je leeg laat ('') komen uit _Kit\Standaardteksten.psd1.
 #   In alle teksten kun je gebruiken:
 #     {AppName}     -> de naam hieronder
 #     {Versie}      -> de versie hieronder
@@ -16,12 +15,20 @@
     Version    = '1.0.0'            # versie die dit pakket installeert (detectie in Intune)
     DetectName = 'Mijn App'         # naam in "Apps en onderdelen" (begint met ...)
     Processes  = @('mijnapp')       # processen die dicht moeten zijn, zonder .exe
+    OutputFolder = ''                # map voor het pakket, bijv. I:\...\versies\1.2.3\intune-package; leeg = Output in de kit
+
+    # Detectie: hoe Intune ziet dat de app er staat (ook in te stellen in de Builder, tabblad 1)
+    DetectionMethod = 'AppsEnOnderdelen'   # AppsEnOnderdelen | Bestand | Register | Script
+    DetectVersion   = ''   # leeg = Version hierboven; '-' = alleen kijken of het bestaat
+    DetectFile      = ''   # bij Bestand, bijv. '%ProgramFiles%\Remote help\RemoteHelp.exe'
+    DetectRegKey    = ''   # bij Register, bijv. 'HKLM\SOFTWARE\Leverancier\App'
+    DetectRegValue  = ''   # bij Register, bijv. 'Version' (leeg = alleen de sleutel)
+    DetectScript    = ''   # bij Script: eigen PowerShell-detectiescript
                                     #   meerdere: @('proces1', 'proces2')
 
     # ---------- 2. Uiterlijk ----------
     Icon        = 'app.ico'         # logo (.ico) in deze map; liefst met 256x256 erin
     AccentColor = '#185FA5'         # kleur van de kop en de knop "Nu bijwerken"
-    PopupLanguage = 'Auto'          # taal van de popups: 'Auto' (Windows-taal van de gebruiker), 'nl' of 'en'
 
     # ---------- 3. Wie krijgt de update ----------
     OnlyUpdateExisting = $true      # $true  = alleen apparaten waar de app al staat
@@ -41,7 +48,7 @@
     InstallWindow = 'Altijd'        # 'Altijd'         = op elk moment
                                     # 'Werktijd'       = alleen op werkdagen binnen de werktijd
                                     # 'BuitenWerktijd' = alleen 's avonds, 's nachts en in het weekend
-    WorkHours     = '08:00-17:00'   # werktijd (van-tot)
+    WorkHours     = '08:00-17:00'   # tijden (van-tot); meerdere blokken mag: '09:00-10:00,13:00-14:00'
     WorkDays      = 'ma,di,wo,do,vr'
     IdleMinutes   = 0               # > 0: zo lang niets gedaan of scherm vergrendeld -> direct installeren, zonder popup
     NoUserAction  = 'Installeren'   # niemand ingelogd: 'Installeren' (direct, ook buiten het tijdvenster) of 'Wachten'
@@ -66,25 +73,23 @@
     PostInstall = ''                # cmd-regels na de onderdelen
 
     # ---------- 6. Teksten voor deze app/versie (leeg = standaardtekst) ----------
-    # Texts   = Nederlands
-    # TextsEn = Engels, voor gebruikers met Engelse Windows
     Texts = @{
         # Venster "Update beschikbaar" (Later / Nu bijwerken)
-        ConsentSubHeading       = ''
-        ConsentMessage          = ''
+        ConsentSubHeading = ''
+        ConsentMessage    = ''
 
         # Waarschuwing na de laatste keer uitstellen (alleen "Nu installeren")
-        ForcedSubHeading        = ''
-        ForcedMessage           = ''
-        ForcedInfo              = ''
+        ForcedSubHeading  = ''
+        ForcedMessage     = ''
+        ForcedInfo        = ''
 
         # Meldingen rechtsonder
-        InstallingHeading       = ''
-        InstallingMessage       = ''
-        SuccessHeading          = ''
-        SuccessMessage          = ''
-        ErrorHeading            = ''
-        ErrorMessage            = ''
+        InstallingHeading = ''
+        InstallingMessage = ''
+        SuccessHeading    = ''
+        SuccessMessage    = ''
+        ErrorHeading      = ''
+        ErrorMessage      = ''
 
         # Herstartmelding ({Minuten} = waarschuwingstijd voor de herstart)
         RestartSubHeading       = ''
@@ -101,54 +106,6 @@
         UninstallErrorMessage   = ''
 
         # Nieuwe installatie: de app stond nog niet op de laptop (leeg = standaardtekst voor een installatie)
-        NewConsentSubHeading    = ''
-        NewConsentMessage       = ''
-        NewForcedSubHeading     = ''
-        NewForcedMessage        = ''
-        NewForcedInfo           = ''
-        NewInstallingHeading    = ''
-        NewInstallingMessage    = ''
-        NewSuccessHeading       = ''
-        NewSuccessMessage       = ''
-        NewErrorHeading         = ''
-        NewErrorMessage         = ''
-        NewRestartMessage       = ''
-        NewRestartForcedMessage = ''
-    }
-
-    TextsEn = @{
-        # "Update available" window (Later / Update now)
-        ConsentSubHeading       = ''
-        ConsentMessage          = ''
-
-        # Warning after the last postpone (only "Install now")
-        ForcedSubHeading        = ''
-        ForcedMessage           = ''
-        ForcedInfo              = ''
-
-        # Notifications bottom right
-        InstallingHeading       = ''
-        InstallingMessage       = ''
-        SuccessHeading          = ''
-        SuccessMessage          = ''
-        ErrorHeading            = ''
-        ErrorMessage            = ''
-
-        # Restart prompt ({Minutes} = warning time before the restart)
-        RestartSubHeading       = ''
-        RestartMessage          = ''
-        RestartForcedSubHeading = ''
-        RestartForcedMessage    = ''
-
-        # Notifications when removing
-        UninstallingHeading     = ''
-        UninstallingMessage     = ''
-        UninstalledHeading      = ''
-        UninstalledMessage      = ''
-        UninstallErrorHeading   = ''
-        UninstallErrorMessage   = ''
-
-        # New installation: the app was not on the device yet (empty = standard text for an installation)
         NewConsentSubHeading    = ''
         NewConsentMessage       = ''
         NewForcedSubHeading     = ''

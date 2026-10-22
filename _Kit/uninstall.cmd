@@ -1,9 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-rem {{T:Verwijdert|Removes}} {{APPNAME}} ({{T:stappen in|steps in}} uninstall-app.cmd) {{T:en de update-gegevens. NIET aanpassen.|and the update data. Do NOT edit.}}
+rem Verwijdert {{APPNAME}} (stappen in uninstall-app.cmd) en de update-gegevens. NIET aanpassen.
 
-rem {{T:Meldingen alleen als UninstallNotify = $true in app.psd1|Notifications only when UninstallNotify = $true in app.psd1}}
+rem Meldingen alleen als UninstallNotify = $true in app.psd1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Show-Toast.ps1" -Type Uninstalling
 
 call uninstall-app.cmd
@@ -19,12 +19,12 @@ goto cleanup
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "Show-Toast.ps1" -Type Uninstalled
 
 :cleanup
-rem {{T:Update-gegevens opruimen; update.log blijft staan|Clean up the update data; update.log is kept}}
+rem Update-gegevens opruimen; update.log blijft staan
 schtasks.exe /delete /tn "AppUpdateKit Herstart {{APPID}}" /f >nul 2>&1
 set "KIT_DATA=C:\ProgramData\AppUpdates\{{APPID}}"
 if exist "%KIT_DATA%\PostponeState.json" del /f /q "%KIT_DATA%\PostponeState.json"
 if exist "%KIT_DATA%\app.json" del /f /q "%KIT_DATA%\app.json"
 for %%d in (UI Herstart Stappen) do if exist "%KIT_DATA%\%%d" rmdir /s /q "%KIT_DATA%\%%d"
->>"%KIT_DATA%\update.log" echo %DATE% %TIME:~0,8% - [uninstall] {{T:Klaar|Done}} (exitcode %UNINSTALL_EXITCODE%)
+>>"%KIT_DATA%\update.log" echo %DATE% %TIME:~0,8% - [uninstall] Klaar (exitcode %UNINSTALL_EXITCODE%)
 
 exit /b %UNINSTALL_EXITCODE%

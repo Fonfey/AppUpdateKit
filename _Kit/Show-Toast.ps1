@@ -1,15 +1,15 @@
 ﻿<#
 .SYNOPSIS
-    Shows a notification in the bottom-right corner to the logged-on user (also when running as SYSTEM).
-    Do NOT edit per app; texts come from app.psd1 / DefaultTexts.psd1, in the user's language.
+    Toont een melding rechtsonder aan de ingelogde gebruiker (ook als dit script als SYSTEM draait).
+    NIET aanpassen per app; teksten komen uit app.psd1 (optioneel) of de standaardteksten hieronder.
 
 .PARAMETER Type
-    Info       : general notification (pass -Heading and -Message)
-    Installing : "Installing update" with progress bar; closes by itself on Success/Error
-    Success    : "Update installed" (green), closes after 2 minutes
-    Error      : "Update failed" (red), stays until the user closes it
-    Uninstalling / Uninstalled / UninstallError : the same notifications when removing the app.
-                 Only when UninstallNotify = $true in app.psd1, or with -Force.
+    Info       : algemene melding (geef -Heading en -Message mee)
+    Installing : "Update wordt geïnstalleerd" met voortgangsbalk; sluit vanzelf bij Success/Error
+    Success    : "Update geïnstalleerd" (groen), sluit na 2 minuten vanzelf
+    Error      : "Update niet gelukt" (rood), blijft staan tot de gebruiker sluit
+    Uninstalling / Uninstalled / UninstallError : zelfde meldingen bij het verwijderen.
+                 Alleen als UninstallNotify = $true in app.psd1, of met -Force.
 
 .EXAMPLE
     powershell.exe -ExecutionPolicy Bypass -File Show-Toast.ps1 -Type Installing
@@ -48,7 +48,7 @@ $defaults = @{
 if (-not $Heading) { $Heading = Get-AppText "$($Type)Heading" $defaults[$Type][0] }
 if (-not $Message) { $Message = Get-AppText "$($Type)Message" $defaults[$Type][1] }
 
-Write-Log (L "Show-Toast gestart. Type='$Type' Heading='$Heading'" "Show-Toast started. Type='$Type' Heading='$Heading'") 'toast'
+Write-Log "Show-Toast gestart. Type='$Type' Heading='$Heading'" 'toast'
 
 $visual = @{ Uninstalling = 'Installing'; Uninstalled = 'Success'; UninstallError = 'Error' }[$Type]
 if (-not $visual) { $visual = $Type }
@@ -67,7 +67,7 @@ switch ($visual) {
     'Installing' {
         Remove-Item -Path $flagPath -Force -ErrorAction SilentlyContinue
         $settings.CloseFlagPath    = $flagPath
-        $settings.AutoCloseSeconds = 2700   # safety net: always close after 45 minutes
+        $settings.AutoCloseSeconds = 2700   # vangnet: na 45 minuten altijd sluiten
     }
     'Success' {
         New-Item -Path $flagPath -ItemType File -Force | Out-Null
@@ -80,5 +80,5 @@ switch ($visual) {
 
 [void](Start-UserPopup -Settings $settings)
 
-Write-Log (L "Show-Toast klaar" "Show-Toast done") 'toast'
+Write-Log "Show-Toast klaar" 'toast'
 exit 0
