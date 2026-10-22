@@ -7,6 +7,7 @@
       Output\<AppId>\<versie>\install.intunewin         het pakket voor Intune
       Output\<AppId>\<versie>\Intune\Requirement.ps1   los uploaden bij Requirements
       Output\<AppId>\<versie>\Intune\Detection.ps1     los uploaden bij Detection rules
+      Output\<AppId>\<versie>\Intune\Install.ps1       PowerShell-installer voor Intune (met Uninstall.ps1)
       Output\<AppId>\<versie>\Intune-instellingen.txt   alle Intune-instellingen op een rij
       Output\<AppId>\<versie>\Bron\                     volledige kopie van deze versie (ook de installers)
       Output\<AppId>\_archief\<versie>_<datum>\          eerdere builds van dezelfde versie (bij opnieuw bouwen)

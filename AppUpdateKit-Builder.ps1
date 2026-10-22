@@ -6,9 +6,11 @@
 .DESCRIPTION
     - Apps kiezen of een nieuwe app aanmaken (map Apps\<AppId>)
     - Installer kiezen: naam, versie, type en stille parameters worden herkend
-    - Logo (.svg/.ico/.png/.jpg), kleur, uitstelregels en teksten invullen
+    - Detectie kiezen (Apps en onderdelen, bestand, register of eigen script) en testen op deze pc
+    - Logo (.svg/.ico/.png/.jpg, of uit de installer), kleur, uitstelregels, tijdblokken en teksten invullen
     - Voorbeeld van elke popup op je eigen scherm
-    - Opslaan en het .intunewin-pakket bouwen (via 2-Bouw-pakket.ps1)
+    - Opslaan en het .intunewin-pakket bouwen (via 2-Bouw-pakket.ps1) in de gekozen pakketmap
+    - Alle eerdere builds terugzien op het tabblad Versies
 #>
 
 $ErrorActionPreference = 'Stop'

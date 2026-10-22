@@ -12,7 +12,7 @@ Elke app krijgt dezelfde vensters:
 
 Eenmalig na het uitpakken, in PowerShell: `Get-ChildItem C:\AppUpdateKit -Recurse | Unblock-File`
 
-Dubbelklik daarna op **`Start-Builder.cmd`**. Na de eerste keer kun je ook de snelkoppeling **AppUpdateKit Builder** gebruiken.
+Dubbelklik daarna op **`Start-Builder.cmd`**. Na de eerste keer kun je ook de snelkoppeling **AppUpdateKit Builder** gebruiken. De eerste keer vraagt de Builder om een standaardmap voor je installers (zie hieronder). Met *Volgende* en *Vorige* linksonder loop je de tabbladen één voor één door.
 
 1. Klik op **+ Nieuwe app** en geef een AppId op (bijv. `7Zip`). Of kies links een bestaande app.
 2. **Tabblad 1 – Basis.** Klik op *Kiezen...* bij Installer. Bij een `.msi` of `.exe` worden naam, versie, type en stille parameters herkend en ingevuld. Bij een `.exe` herkent de Builder NSIS, Inno Setup, InstallShield en WiX; is het type onbekend, dan vul je de stille parameters zelf in (tabblad 2). Vul daarna de processen in en kies een logo en een kleur. Het logo mag een `.svg`, `.png`, `.jpg` of `.ico` zijn. Een SVG wordt met Microsoft Edge omgezet naar een scherp icoon van 256×256, en het origineel blijft als `logo.svg` in de app-map bewaard. Met *Uit installer halen* haalt de Builder het logo uit een `.exe` (de grootste versie, tot 256×256) of uit een `.msi` (het pictogram dat de MSI voor *Apps en onderdelen* gebruikt).
@@ -33,13 +33,13 @@ Dubbelklik daarna op **`Start-Builder.cmd`**. Na de eerste keer kun je ook de sn
      - Tijdens Autopilot regelt de inrichtingspagina de herstart.
      - De herinnering is een geplande taak (*AppUpdateKit Herstart <AppId>*), die zichzelf opruimt na de herstart.
    - **Verwijderen:** met *Meldingen tonen als de app via Intune wordt verwijderd* ziet de gebruiker rechtsonder "… wordt verwijderd", en daarna "… is verwijderd" (groen) of "Verwijderen niet gelukt" (rood). Standaard staat dit uit. De teksten pas je aan in tabblad 3. Bij de PowerShell-installer zet je het ook aan of uit met `$Melding` in `Uninstall.ps1`. Bij het verwijderen worden de teller, de instellingen en een eventuele herstartherinnering opgeruimd; `update.log` blijft staan.
-6. Klik op **Bouw pakket**. De eerste keer vraagt de Builder om IntuneWinAppUtil.exe van Microsoft te downloaden. Daarna staat `install.intunewin` klaar in `Output\<AppId>\<versie>\`, samen met de Intune-scripts en een lijst met instellingen.
+6. Klik op **Bouw pakket**. De eerste keer vraagt de Builder om IntuneWinAppUtil.exe van Microsoft te downloaden. Daarna staat `install.intunewin` klaar in de map die je bij *Pakket opslaan in* hebt gekozen (bijv. `...\versies\<versie>\intune-package`), samen met de Intune-scripts en een lijst met instellingen. Op het tabblad *Resultaat* zie je wat er tijdens het bouwen gebeurde.
 7. **Tabblad 5 – Versies.** Alle builds blijven bewaard, met een volledige kopie (ook de installers). Bouw je een versie opnieuw, dan gaat de vorige build van die versie naar het archief en staat hij in de lijst als "(vervangen)". Klik op een build om te zien hoe die gemaakt is: instellingen, onderdelen, stappen, teksten, bouwinfo en wat er anders is dan nu. Met *Voorbeeld van deze versie* zie je de popups van toen.
    - **Kopie maken en aanpassen:** zet een volledige kopie van de gekozen build klaar als werkversie, ook van een oudere of gearchiveerde build. Pas alleen aan wat nodig is en bouw opnieuw:
      - **zelfde versienummer** = die versie verbeteren (de vorige build gaat naar het archief);
      - **nieuwe installer of nieuw versienummer** = een nieuwe versie.
 
-**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\omnissa\horizon client\versies\8.18.0.51429`. De Builder zet er `\intune-package` achter. Je kunt het pad ook typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
+**Waar het pakket komt (verplicht bij bouwen).** In tabblad 1 kies je bij *Pakket opslaan in* met *Kiezen...* de versiemap, bijvoorbeeld `I:\Software\projecten\omnissa\horizon client\versies\8.18.0.51429`. De Builder zet er `\intune-package` achter. Het kiesvenster werkt zoals Verkenner: je kunt bovenin in de adresbalk een pad typen of plakken. Je kunt het pad ook direct in het tekstvak typen of plakken. Opslaan kan ook zonder deze map, maar bouwen niet. Bestaat de map nog niet, dan biedt de Builder bij *Bouw pakket* aan om hem aan te maken.
 
 In `_Kit\Instellingen.psd1` staan twee instellingen voor de hele kit:
 - `InstallerMap`: de map waar *Kiezen...* standaard opent. Je stelt hem in bij de eerste keer opstarten, of later met de knop *Standaardmap...* links in de Builder. Hij komt dan in dit bestand, bijvoorbeeld `I:\Software\projecten\`.
@@ -140,11 +140,12 @@ Staat de optie uit, dan slaat het pakket de inrichting over en komt de app daarn
 .\2-Bouw-pakket.ps1 -App 7Zip
 ```
 
-4. **Uploaden in Intune.** Alles staat in `Output\7Zip\<versie>\`:
+4. **Uploaden in Intune.** Alles staat in `Output\7Zip\<versie>\`, of in de map bij `OutputFolder` als je die in `app.psd1` hebt ingevuld:
 
 | Bestand | Wat ermee doen |
 |---|---|
-| `<versie>\install.intunewin` | Uploaden als Win32-app. Wordt alleen automatisch gemaakt als `IntuneWinAppUtil.exe` naast de scripts staat. |
+| `install.intunewin` | Uploaden als Win32-app. Wordt alleen automatisch gemaakt als `IntuneWinAppUtil.exe` naast de scripts staat (de Builder downloadt hem voor je). |
+| `Intune\Install.ps1` en `Intune\Uninstall.ps1` | Uploaden als *PowerShell script*-installer (zie hierboven) |
 | `Intune\Requirement.ps1` | Uploaden bij *Requirements* (Output: String, Equals, `Voldaan`) |
 | `Intune\Detection.ps1` | Uploaden bij *Detection rules* |
 | `Intune-instellingen.txt` | Alle overige instellingen op een rij |
