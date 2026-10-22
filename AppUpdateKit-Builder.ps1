@@ -3211,21 +3211,16 @@ $ui.BtnPrevError.Add_Click({ Show-Preview 'error' })
 
 $ui.BtnSave.Add_Click({ [void](Save-App) })
 
-# Vorige / Volgende: door de invul-tabbladen 1 t/m 4 (Basis, Installatie, Teksten, Uitstellen)
-$LastStepTab = 3
+# Vorige / Volgende: door alle tabbladen (Basis t/m Resultaat)
 function Update-TabNav
 {
     $i = $ui.Tabs.SelectedIndex
     $on = $ui.Tabs.IsEnabled
     $ui.BtnPrevTab.IsEnabled = $on -and $i -gt 0
-    $ui.BtnNextTab.IsEnabled = $on -and $i -ge 0 -and $i -lt $LastStepTab
+    $ui.BtnNextTab.IsEnabled = $on -and $i -ge 0 -and $i -lt ($ui.Tabs.Items.Count - 1)
 }
-$ui.BtnNextTab.Add_Click({ if ($ui.Tabs.SelectedIndex -lt $LastStepTab) { $ui.Tabs.SelectedIndex++ }; Update-TabNav })
-$ui.BtnPrevTab.Add_Click({
-    $i = $ui.Tabs.SelectedIndex
-    $ui.Tabs.SelectedIndex = if ($i -gt $LastStepTab) { $LastStepTab } else { [Math]::Max(0, $i - 1) }
-    Update-TabNav
-})
+$ui.BtnNextTab.Add_Click({ if ($ui.Tabs.SelectedIndex -lt ($ui.Tabs.Items.Count - 1)) { $ui.Tabs.SelectedIndex++ }; Update-TabNav })
+$ui.BtnPrevTab.Add_Click({ if ($ui.Tabs.SelectedIndex -gt 0) { $ui.Tabs.SelectedIndex-- }; Update-TabNav })
 $ui.Tabs.Add_SelectionChanged({ Update-TabNav })
 $ui.Tabs.Add_IsEnabledChanged({ Update-TabNav })
 $ui.BtnBuild.Add_Click({ Start-Build })
