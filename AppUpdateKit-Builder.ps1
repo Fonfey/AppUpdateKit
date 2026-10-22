@@ -1550,6 +1550,10 @@ $xamlText = @'
           <Button Name="BtnOpenOutput" Content="Map met pakket openen" IsEnabled="False"/>
           <Button Name="BtnBuild" Content="Bouw pakket (.intunewin)" Style="{StaticResource Primary}" Margin="0"/>
         </StackPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,16,0">
+          <Button Name="BtnPrevTab" Content="‹  Vorige" IsEnabled="False" ToolTip="Naar het vorige tabblad"/>
+          <Button Name="BtnNextTab" Content="Volgende  ›" IsEnabled="False" ToolTip="Naar het volgende tabblad" Margin="0"/>
+        </StackPanel>
         <TextBlock Name="TxtStatus" VerticalAlignment="Center" Foreground="#6B7280" TextTrimming="CharacterEllipsis"/>
       </DockPanel>
     </Border>
@@ -2981,22 +2985,128 @@ $ui.BtnRemoveFile.Add_Click({
 })
 
 $ui.BtnOpenAppFolder.Add_Click({ if (Get-AppFolder) { Start-Process explorer.exe (Get-AppFolder) } })
-$ui.BtnOutputFolder.Add_Click({
+# Moderne Windows-mapkiezer (zoals in Verkenner: adresbalk om een pad te typen of plakken, snelle toegang links).
+# De oude FolderBrowserDialog (boomstructuur) is alleen nog de reserve als deze niet werkt.
+if (-not ('AppKit.FolderPicker' -as [type]))
+{
+    try
+    {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+namespace AppKit {
+    public static class FolderPicker {
+        [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")] class FileOpenDialogCom { }
+
+        [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IFileOpenDialog {
+            [PreserveSig] int Show(IntPtr parent);
+            void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+            void SetFileTypeIndex(uint iFileType);
+            void GetFileTypeIndex(out uint piFileType);
+            void Advise(IntPtr pfde, out uint pdwCookie);
+            void Unadvise(uint dwCookie);
+            void SetOptions(uint fos);
+            void GetOptions(out uint pfos);
+            void SetDefaultFolder(IShellItem psi);
+            void SetFolder(IShellItem psi);
+            void GetFolder(out IShellItem ppsi);
+            void GetCurrentSelection(out IShellItem ppsi);
+            void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+            void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+            void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+            void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+            void GetResult(out IShellItem ppsi);
+            void AddPlace(IShellItem psi, int fdap);
+            void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+            void Close(int hr);
+            void SetClientGuid(ref Guid guid);
+            void ClearClientData();
+            void SetFilter(IntPtr pFilter);
+            void GetResults(out IntPtr ppenum);
+            void GetSelectedItems(out IntPtr ppsai);
+        }
+
+        [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IShellItem {
+            void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+            void GetParent(out IShellItem ppsi);
+            void GetDisplayName(uint sigdnName, [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+            void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+            void Compare(IShellItem psi, uint hint, out int piOrder);
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+        static extern void SHCreateItemFromParsingName(string pszPath, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem ppv);
+
+        // Geeft het gekozen pad terug, of null bij Annuleren
+        public static string Show(IntPtr owner, string title, string okLabel, string startFolder) {
+            IFileOpenDialog dlg = (IFileOpenDialog)new FileOpenDialogCom();
+            try {
+                uint opts;
+                dlg.GetOptions(out opts);
+                dlg.SetOptions(opts | 0x20 | 0x40 | 0x8 | 0x800);   // mappen kiezen, alleen bestandssysteem, map niet wijzigen, pad moet bestaan
+                if (!String.IsNullOrEmpty(title)) dlg.SetTitle(title);
+                if (!String.IsNullOrEmpty(okLabel)) dlg.SetOkButtonLabel(okLabel);
+                if (!String.IsNullOrEmpty(startFolder)) {
+                    try {
+                        IShellItem start;
+                        SHCreateItemFromParsingName(startFolder, IntPtr.Zero, typeof(IShellItem).GUID, out start);
+                        dlg.SetFolder(start);
+                    } catch { }
+                }
+                int hr = dlg.Show(owner);
+                if (hr == unchecked((int)0x800704C7)) return null;   // Annuleren
+                if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+                IShellItem item;
+                dlg.GetResult(out item);
+                string path;
+                item.GetDisplayName(0x80058000, out path);           // SIGDN_FILESYSPATH
+                return path;
+            } finally { Marshal.ReleaseComObject(dlg); }
+        }
+    }
+}
+"@
+    }
+    catch { }
+}
+
+function Select-Folder([string]$Title, [string]$StartFolder, [string]$OkLabel = 'Map kiezen')
+{
+    # Geeft het gekozen pad terug, of $null bij Annuleren
+    if ('AppKit.FolderPicker' -as [type])
+    {
+        try
+        {
+            $owner = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+            return [AppKit.FolderPicker]::Show($owner, $Title, $OkLabel, $StartFolder)
+        }
+        catch { }
+    }
     Add-Type -AssemblyName System.Windows.Forms
     $f = New-Object System.Windows.Forms.FolderBrowserDialog
-    $f.Description = 'Kies de map waarin het pakket (install.intunewin, Intune-scripts, Bron) komt.'
+    $f.Description = $Title
     $f.ShowNewFolderButton = $true
+    if ($StartFolder) { $f.SelectedPath = $StartFolder }
+    if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $f.SelectedPath }
+    return $null
+}
+
+$ui.BtnOutputFolder.Add_Click({
     $cur = $ui.TxtOutputFolder.Text.Trim()
     # Startpunt: de versiemap van de zojuist gekozen installer, anders de huidige map, anders de standaardmap
     $start = @()
     if ($script:LastInstallerPath) { $start += (Get-VersionFolder $script:LastInstallerPath) }
     if ($cur) { $start += $cur; $start += (Split-Path $cur -Parent) }
     $start += $KitSettings.InstallerMap
-    foreach ($c in $start) { if ($c -and (Test-Path -LiteralPath $c)) { $f.SelectedPath = $c; break } }
-    if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK)
+    $startDir = $start | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    $picked = Select-Folder 'Kies de versiemap (het pakket komt in \intune-package daarbinnen)' $startDir
+    if ($picked)
     {
         # Gekozen versiemap -> <versiemap>\intune-package (PakketSubmap in _Kit\Instellingen.psd1)
-        $chosen = $f.SelectedPath.TrimEnd('\')
+        $chosen = $picked.TrimEnd('\')
         $sub = $KitSettings.PakketSubmap
         $ui.TxtOutputFolder.Text = if ($sub -and (Split-Path $chosen -Leaf) -ine $sub) { Join-Path $chosen $sub } else { $chosen }
         Set-Status "Pakket komt in: $($ui.TxtOutputFolder.Text)"
@@ -3100,21 +3210,36 @@ $ui.BtnPrevSuccess.Add_Click({ Show-Preview 'success' })
 $ui.BtnPrevError.Add_Click({ Show-Preview 'error' })
 
 $ui.BtnSave.Add_Click({ [void](Save-App) })
+
+# Vorige / Volgende: door de invul-tabbladen 1 t/m 4 (Basis, Installatie, Teksten, Uitstellen)
+$LastStepTab = 3
+function Update-TabNav
+{
+    $i = $ui.Tabs.SelectedIndex
+    $on = $ui.Tabs.IsEnabled
+    $ui.BtnPrevTab.IsEnabled = $on -and $i -gt 0
+    $ui.BtnNextTab.IsEnabled = $on -and $i -ge 0 -and $i -lt $LastStepTab
+}
+$ui.BtnNextTab.Add_Click({ if ($ui.Tabs.SelectedIndex -lt $LastStepTab) { $ui.Tabs.SelectedIndex++ }; Update-TabNav })
+$ui.BtnPrevTab.Add_Click({
+    $i = $ui.Tabs.SelectedIndex
+    $ui.Tabs.SelectedIndex = if ($i -gt $LastStepTab) { $LastStepTab } else { [Math]::Max(0, $i - 1) }
+    Update-TabNav
+})
+$ui.Tabs.Add_SelectionChanged({ Update-TabNav })
+$ui.Tabs.Add_IsEnabledChanged({ Update-TabNav })
 $ui.BtnBuild.Add_Click({ Start-Build })
 #endregion
 
 function Select-InstallerMap([switch]$FirstRun)
 {
     # Standaardmap voor installers kiezen en opslaan in _Kit\Instellingen.psd1
-    Add-Type -AssemblyName System.Windows.Forms
-    $f = New-Object System.Windows.Forms.FolderBrowserDialog
-    $f.Description = 'Kies de map waar "Kiezen..." standaard opent bij het kiezen van een installer (bijv. I:\Software\projecten).'
-    $f.ShowNewFolderButton = $false
-    if ($KitSettings.InstallerMap -and (Test-Path -LiteralPath $KitSettings.InstallerMap)) { $f.SelectedPath = $KitSettings.InstallerMap }
-    if ($f.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    $startDir = if ($KitSettings.InstallerMap -and (Test-Path -LiteralPath $KitSettings.InstallerMap)) { $KitSettings.InstallerMap } else { $null }
+    $picked = Select-Folder 'Standaardmap voor installers kiezen (hier opent "Kiezen..." straks)' $startDir
+    if (-not $picked) { return }
     try
     {
-        Save-InstallerMap $f.SelectedPath
+        Save-InstallerMap $picked
         Set-Status "Standaardmap voor installers: $($KitSettings.InstallerMap)"
     }
     catch { Show-Error "De standaardmap kon niet worden opgeslagen in _Kit\Instellingen.psd1: $($_.Exception.Message)" }
