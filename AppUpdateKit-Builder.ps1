@@ -1021,6 +1021,99 @@ try
 }
 catch { }
 
+# Startmenu-snelkoppeling met dezelfde taakbalk-identiteit (AppUserModelID) en het icoon.
+# Windows haalt het taakbalkicoon van een app met een eigen identiteit uit zo'n snelkoppeling; zonder snelkoppeling
+# toont de taakbalk bij de eerste start (vooral vanaf een netwerkschijf) soms een leeg icoon.
+# Wordt gemaakt voordat het venster verschijnt, en staat daarna ook in het Startmenu als "AppUpdateKit Builder".
+if (-not ('AppKit.AumidShortcut' -as [type]))
+{
+    try
+    {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+namespace AppKit {
+    public static class AumidShortcut {
+        [ComImport, Guid("00021401-0000-0000-C000-000000000046")] class CShellLink { }
+
+        [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IShellLinkW {
+            void GetPath(IntPtr pszFile, int cch, IntPtr pfd, uint fFlags);
+            void GetIDList(out IntPtr ppidl);
+            void SetIDList(IntPtr pidl);
+            void GetDescription(IntPtr pszName, int cch);
+            void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetWorkingDirectory(IntPtr pszDir, int cch);
+            void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+            void GetArguments(IntPtr pszArgs, int cch);
+            void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+            void GetHotkey(out short pwHotkey);
+            void SetHotkey(short wHotkey);
+            void GetShowCmd(out int piShowCmd);
+            void SetShowCmd(int iShowCmd);
+            void GetIconLocation(IntPtr pszIconPath, int cch, out int piIcon);
+            void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+            void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+            void Resolve(IntPtr hwnd, uint fFlags);
+            void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        struct PropertyKey { public Guid fmtid; public uint pid; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct PropVariant { public ushort vt; public ushort r1; public ushort r2; public ushort r3; public IntPtr p1; public IntPtr p2; }
+
+        [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface IPropertyStore {
+            void GetCount(out uint cProps);
+            void GetAt(uint iProp, IntPtr pkey);
+            void GetValue(ref PropertyKey key, IntPtr pv);
+            void SetValue(ref PropertyKey key, ref PropVariant pv);
+            void Commit();
+        }
+
+        public static void Save(string lnkPath, string target, string args, string workDir, string iconPath, string appId, string description) {
+            IShellLinkW link = (IShellLinkW)new CShellLink();
+            try {
+                link.SetPath(target);
+                link.SetArguments(args);
+                link.SetWorkingDirectory(workDir);
+                link.SetIconLocation(iconPath, 0);
+                link.SetDescription(description);
+                link.SetShowCmd(7);   // geminimaliseerd: het PowerShell-venster blijft weg
+                IPropertyStore store = (IPropertyStore)link;
+                PropertyKey key = new PropertyKey();
+                key.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");   // PKEY_AppUserModel_ID
+                key.pid = 5;
+                PropVariant pv = new PropVariant();
+                pv.vt = 31;   // VT_LPWSTR
+                pv.p1 = Marshal.StringToCoTaskMemUni(appId);
+                try { store.SetValue(ref key, ref pv); store.Commit(); }
+                finally { Marshal.FreeCoTaskMem(pv.p1); }
+                ((IPersistFile)link).Save(lnkPath, true);
+            } finally { Marshal.ReleaseComObject(link); }
+        }
+    }
+}
+"@
+    }
+    catch { }
+}
+try
+{
+    $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'AppUpdateKit Builder.lnk'
+    if ('AppKit.AumidShortcut' -as [type])
+    {
+        [AppKit.AumidShortcut]::Save($startMenu,
+            (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'),
+            "-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $KitRoot 'AppUpdateKit-Builder.ps1')`"",
+            $KitRoot, $BuilderIcon, 'AppUpdateKit.Builder', 'AppUpdateKit Builder')
+    }
+}
+catch { }
+
 function Get-BuilderIconImage
 {
     # Icoon uit de bytes laden (niet via een bestandsadres): werkt ook vanaf een netwerkschijf
