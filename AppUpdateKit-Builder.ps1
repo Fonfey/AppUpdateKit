@@ -2517,6 +2517,13 @@ function ConvertTo-CmdPath([string]$p)
     return $p.TrimEnd('\')
 }
 
+function Test-FileName([string]$p)
+{
+    # Ziet dit eruit als een bestand (naam.ext met een echte extensie)? 'v2.0' of '8.18' is een map.
+    if (-not $p -or -not $p.TrimEnd('\')) { return $false }
+    return ((Split-Path ($p.TrimEnd('\')) -Leaf) -match '\.[A-Za-z][A-Za-z0-9_]{0,7}$')
+}
+
 function Test-RegPath([string]$p) { return ($p -match '^(?i)(HKLM|HKCU|HKCR|HKU)(\\|$)') }
 
 function Get-PsFolderPath([string]$Name)
@@ -2760,7 +2767,7 @@ function Get-CmdLineUndo([string]$Line, [string]$AppDir)
             $src = $args2[0]; $dst = ConvertTo-CmdPath $args2[1]
             if ($src -match '[\*\?]') { return @{ Unknown = $true } }
             $leaf = Split-Path ($src.Replace('/', '\')) -Leaf
-            $isDir = $args2[1].EndsWith('\') -or -not [System.IO.Path]::GetExtension($dst)
+            $isDir = $args2[1].EndsWith('\') -or -not (Test-FileName $dst)
             if ($cmd -eq 'xcopy' -and ((& $has '/s') -or (& $has '/e'))) { return @{ Undo = @(Get-UndoForFile $dst -Tree) } }
             return @{ Undo = @(Get-UndoForFile $(if ($isDir) { "$dst\$leaf" } else { $dst })) }
         }
@@ -2998,8 +3005,8 @@ function Invoke-PsUndoScan($Root, [hashtable]$Vars, $Undo, $Unknown, [hashtable]
                 foreach ($s in $src) { foreach ($d in $dst)
                 {
                     $leaf = Split-Path ($s.Replace('/', '\').TrimEnd('\')) -Leaf
-                    $srcIsDir = -not [System.IO.Path]::GetExtension($leaf)
-                    $dstIsDir = (Get-NamedArg $a 'destination' 1).Extent.Text -match '\\["'']?$' -or -not [System.IO.Path]::GetExtension($d)
+                    $srcIsDir = -not (Test-FileName $leaf)
+                    $dstIsDir = (Get-NamedArg $a 'destination' 1).Extent.Text -match '\\["'']?$' -or -not (Test-FileName $d)
                     if ($srcIsDir) { [void]$undo.Add((Get-UndoForFile $(if ($dstIsDir -and $a.Named.ContainsKey('recurse') -and (Split-Path $d -Leaf) -ine $leaf) { "$d\$leaf" } else { $d }) -Tree)) }
                     elseif ($dstIsDir) { [void]$undo.Add((Get-UndoForFile "$d\$leaf")) }
                     else { [void]$undo.Add((Get-UndoForFile $d)) }
@@ -3313,9 +3320,12 @@ function Sync-UninstallCleanup
     }
     # Nieuwe blokken uit de kopieerstappen
     $block = New-Object System.Collections.Generic.List[string]
-    foreach ($m in [regex]::Matches("$($ui.TxtPostInstall.Text)", 'copy /Y "([^"]+)" "([^"]+)"', 'IgnoreCase'))
+    # Kopieerregels in de extra stappen (voor en na): die van de Builder (copy /Y "x" "map\") en eigen copy/xcopy-regels
+    $steps = "$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)"
+    foreach ($m in [regex]::Matches($steps, '(?im)^\s*x?copy\s+(?:/\S+\s+)*"?([^"\s\\]+)"?\s+"([^"]+)"'))
     {
         $file = $m.Groups[1].Value; $dir = $m.Groups[2].Value.TrimEnd('\')
+        if (Test-FileName $dir) { if ((Split-Path $dir -Leaf) -ine $file) { continue }; $dir = Split-Path $dir -Parent }   # copy x "map\x"
         $block.Add("rem Bestand: $file opruimen uit $dir")
         $block.Add("if exist `"$dir\$file`" del /F /Q `"$dir\$file`"")
         $block.Add("rd `"$dir`" 2>nul")
