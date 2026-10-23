@@ -18,9 +18,12 @@
       Run script as 32-bit process on 64-bit clients : No
       Run this script using the logged on credentials : No
       Enforce script signature check                  : No
-      Output data type : String
+      Output data type : Boolean
       Operator         : Equals
-      Value            : Voldaan
+      Value            : Yes
+
+    Het script geeft True (voldaan) of False (niet voldaan). De reden bij False gaat naar de foutuitvoer;
+    Intune zet die in IntuneManagementExtension.log, zonder dat het de uitkomst beinvloedt.
 #>
 
 $AppId           = '{{APPID}}'
@@ -81,12 +84,18 @@ function Get-SetupPhase
 
 $statePath = "C:\ProgramData\AppUpdates\$AppId\PostponeState.json"
 
+function Set-Result([bool]$Ok, [string]$Reason = '') {
+    # Intune leest alleen de gewone uitvoer: True of False. De reden komt in de foutuitvoer (het IME-log).
+    if ($Reason) { [Console]::Error.WriteLine($Reason) }
+    Write-Output $(if ($Ok) { 'True' } else { 'False' })
+    exit 0
+}
+
 try {
     $phase = Get-SetupPhase
     if ($phase) {
-        if ($DuringSetup) { Write-Host "Voldaan"; exit 0 }
-        Write-Host "Inrichting bezig ($phase)"
-        exit 1
+        if ($DuringSetup) { Set-Result $true "Inrichting bezig ($phase): direct installeren" }
+        Set-Result $false "Inrichting bezig ($phase)"
     }
 
     if ($OnlyIfInstalled) {
@@ -97,8 +106,7 @@ try {
         $installed = Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "$DisplayName*" }
         if (-not $installed) {
-            Write-Host "Niet geinstalleerd"
-            exit 1
+            Set-Result $false 'Niet geinstalleerd'
         }
     }
 
@@ -106,33 +114,27 @@ try {
     $userLoggedOn = [bool](@(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue) |
         Where-Object { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User -ne 'defaultuser0' })
     if (-not $userLoggedOn -and $NoUserAction -eq 'Wachten') {
-        Write-Host "Geen gebruiker ingelogd"
-        exit 1
+        Set-Result $false 'Geen gebruiker ingelogd'
     }
     if ($userLoggedOn -and -not (Test-InTimeWindow $InstallWindow $WorkHours $WorkDays)) {
-        Write-Host "Buiten tijdvenster"
-        exit 1
+        Set-Result $false 'Buiten tijdvenster'
     }
 
     if (Test-Path $statePath) {
         $state = Get-Content -Path $statePath -Raw | ConvertFrom-Json
         if ($state.PostponeUntil -and (Get-Date) -lt [datetime]$state.PostponeUntil) {
-            Write-Host "Uitgesteld tot $($state.PostponeUntil)"
-            exit 1
+            Set-Result $false "Uitgesteld tot $($state.PostponeUntil)"
         }
     }
 
     foreach ($p in @($Processes | Where-Object { $CheckProcesses })) {
         if (Get-Process -Name ($p -replace '\.exe$', '') -ErrorAction SilentlyContinue) {
-            Write-Host "App staat open ($p)"
-            exit 1
+            Set-Result $false "App staat open ($p)"
         }
     }
 
-    Write-Host "Voldaan"
-    exit 0
+    Set-Result $true
 }
 catch {
-    Write-Host "Fout tijdens controle: $($_.Exception.Message)"
-    exit 1
+    Set-Result $false "Fout tijdens controle: $($_.Exception.Message)"
 }

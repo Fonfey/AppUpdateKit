@@ -413,7 +413,7 @@ Program
 
 Requirements
   Script             : Intune\Requirement.ps1
-  Output data type   : String  |  Operator: Equals  |  Value: Voldaan
+  Output data type   : Boolean  |  Operator: Equals  |  Value: Yes
   32-bit: No  |  Logged on credentials: No  |  Signature check: No
 
 Detection rules

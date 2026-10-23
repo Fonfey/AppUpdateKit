@@ -148,7 +148,7 @@ Staat de optie uit, dan slaat het pakket de inrichting over en komt de app daarn
 |---|---|
 | `install.intunewin` | Uploaden als Win32-app. Wordt alleen automatisch gemaakt als `IntuneWinAppUtil.exe` naast de scripts staat (de Builder downloadt hem voor je). |
 | `Intune\Install.ps1` en `Intune\Uninstall.ps1` | Uploaden als *PowerShell script*-installer (zie hierboven) |
-| `Intune\Requirement.ps1` | Uploaden bij *Requirements* (Output: String, Equals, `Voldaan`) |
+| `Intune\Requirement.ps1` | Uploaden bij *Requirements* (Output data type: Boolean, Equals, Yes) |
 | `Intune\Detection.ps1` | Uploaden bij *Detection rules* |
 | `Intune-instellingen.txt` | Alle overige instellingen op een rij |
 | `Bron\` en `Bouwinfo.txt` | De instellingen, teksten en het logo van deze versie, plus wanneer en door wie hij gebouwd is en de SHA-256 van elk bestand |
