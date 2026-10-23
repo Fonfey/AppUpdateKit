@@ -1787,7 +1787,7 @@ $xamlText = @'
                   <Button DockPanel.Dock="Right" Name="BtnOutputFolder" Content="Kiezen..." Margin="8,2,0,8"/>
                   <TextBox Name="TxtOutputFolder"/>
                 </DockPanel>
-                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Kies je de Output-map van de kit, dan komt het pakket in Output\&lt;AppId&gt;\&lt;versie&gt;. Je kunt het pad ook typen of plakken."/>
+                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken."/>
               </StackPanel>
             </Border>
 
@@ -3579,6 +3579,20 @@ $ui.BtnOutputFolder.Add_Click({
         Set-Status "Pakket komt in: $($ui.TxtOutputFolder.Text)"
     }
 })
+
+function Update-OutputHint
+{
+    # Uitleg onder 'Pakket opslaan in', passend bij de gekozen map
+    $o = $ui.TxtOutputFolder.Text.Trim()
+    $ui.TxtOutputHint.Text = if ($o -and (Test-InKitOutput $o))
+    {
+        $v = $ui.TxtVersion.Text.Trim(); if (-not $v) { $v = '<versie>' }
+        "Map in de kit: het pakket komt in Output\$($script:CurrentApp)\$v (elke versie een eigen map)."
+    }
+    else { 'Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken.' }
+}
+$ui.TxtOutputFolder.Add_TextChanged({ Update-OutputHint })
+$ui.TxtVersion.Add_TextChanged({ Update-OutputHint })
 
 $ui.BtnOpenOutput.Add_Click({
     $o = Get-OutputRoot
