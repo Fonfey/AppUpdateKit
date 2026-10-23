@@ -97,6 +97,14 @@ if ($installText) {
     }
 }
 
+$un = Join-Path $source 'uninstall-app.cmd'
+if (Test-Path -LiteralPath $un) {
+    # Verwijderstappen die de Builder niet zelf kon invullen (bijv. een script zonder verwijderscript)
+    foreach ($m in [regex]::Matches([System.IO.File]::ReadAllText($un), '(?m)^rem VUL IN: (.+)$')) {
+        $warnings += "uninstall-app.cmd is nog niet compleet: $($m.Groups[1].Value.Trim())"
+    }
+}
+
 $warnings | ForEach-Object { Write-Warning $_ }
 if ($problems) {
     $problems | ForEach-Object { Write-Host "FOUT: $_" -ForegroundColor Red }

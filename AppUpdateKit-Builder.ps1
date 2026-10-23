@@ -2392,6 +2392,7 @@ function Update-InstallPreview
     {
         $ui.TxtInstallCmd.Text = New-InstallCmdFromComponents $ui.TxtAppName.Text (Get-ComponentList) $ui.TxtPreInstall.Text $ui.TxtPostInstall.Text
     }
+    Sync-UninstallCleanup   # verwijderstappen bijwerken met de onderdelen en kopieerstappen
 }
 
 function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
@@ -2457,10 +2458,175 @@ function Update-FileList
     if ($selName) { $ui.DgComponents.SelectedItem = $script:Rows | Where-Object { $_.File -eq $selName } | Select-Object -First 1 }
 }
 
+function Get-RegUndoLines([string]$Path)
+{
+    # Een .reg-bestand ongedaan maken: elke waarde die het bestand zet, weer verwijderen.
+    # Hele sleutels niet: die kunnen al bestaan en ook waarden van anderen bevatten.
+    $out = New-Object System.Collections.Generic.List[string]
+    $map = @{ 'HKEY_LOCAL_MACHINE' = 'HKLM'; 'HKEY_CURRENT_USER' = 'HKCU'; 'HKEY_CLASSES_ROOT' = 'HKCR'; 'HKEY_USERS' = 'HKU'; 'HKEY_CURRENT_CONFIG' = 'HKCC' }
+    $key = $null
+    try { $text = [System.IO.File]::ReadAllText($Path) } catch { return $out }
+    foreach ($l in ($text -split "`r?`n"))
+    {
+        if ($l -match '^\[(-?)([^\]]+)\]\s*$')
+        {
+            $key = if ($Matches[1]) { $null } else { $Matches[2] }
+            if ($key) { foreach ($h in $map.Keys) { if ($key -like "$h\*" -or $key -eq $h) { $key = $map[$h] + $key.Substring($h.Length); break } } }
+            continue
+        }
+        if (-not $key) { continue }
+        if ($l -match '^@=(?!-)') { $out.Add("reg.exe delete `"$key`" /ve /f >nul 2>&1"); continue }
+        if ($l -match '^"((?:[^"\\]|\\.)*)"=(?!-)')
+        {
+            $name = $Matches[1] -replace '\\(.)', '$1'
+            $out.Add("reg.exe delete `"$key`" /v `"$name`" /f >nul 2>&1")
+        }
+    }
+    return $out
+}
+
+function Get-ComponentUndo($c)
+{
+    # Verwijderregels die een onderdeel (geen hoofdonderdeel) ongedaan maken. 'VUL IN' = de Builder weet het niet.
+    $file = "$($c.File)"; $base = [System.IO.Path]::GetFileNameWithoutExtension($file); $ext = [System.IO.Path]::GetExtension($file)
+    $dir = Get-AppFolder
+    $path = if ($dir) { Join-Path $dir $file } else { $file }
+    if ($file -match '(?i)runtime|redist|vcredist|dotnet|webview')
+    {
+        return @('rem Gedeeld onderdeel: wordt niet verwijderd, andere apps kunnen het ook gebruiken.')
+    }
+    switch ("$($c.Kind)".ToUpper())
+    {
+        'MSI'
+        {
+            if ($c.ProductCode) { return @("msiexec.exe /x $($c.ProductCode) /qn /norestart") }
+            return @("rem VUL IN: verwijdercommando voor $file (geen productcode gevonden).")
+        }
+        'MSP' { return @('rem MSI-patch: gaat mee weg met het verwijderen van het product.') }
+        'REG'
+        {
+            $r = @(Get-RegUndoLines $path)
+            if ($r.Count) { return $r }
+            return @("rem VUL IN: welke registerwaarden van $file moeten weg?")
+        }
+        { $_ -in 'PS1', 'CMD' }
+        {
+            # 1) Een verwijderscript naast het script (zelfde naam + -uninstall/-verwijderen, of Uninstall-<naam>)
+            $names = foreach ($e in @($ext, '.ps1', '.cmd', '.bat') | Select-Object -Unique) {
+                "$base-uninstall$e"; "$base-verwijderen$e"; "${base}_uninstall$e"; "Uninstall-$base$e"; "Verwijder-$base$e" }
+            foreach ($n in $names)
+            {
+                if ($dir -and (Test-Path -LiteralPath (Join-Path $dir $n)))
+                {
+                    if ($n -like '*.ps1') { return @("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$n`"") }
+                    return @("call `"$n`"")
+                }
+            }
+            # 2) Een PowerShell-script met een schakelaar -Uninstall / -Remove / -Verwijderen
+            if ($ext -ieq '.ps1' -and $dir -and (Test-Path -LiteralPath $path))
+            {
+                $ast = $null
+                try { $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null) } catch { }
+                $p = if ($ast -and $ast.ParamBlock) { @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) } else { @() }
+                $sw = @($p | Where-Object { $_ -in 'Uninstall', 'Remove', 'Verwijderen', 'Verwijder' }) | Select-Object -First 1
+                if ($sw) { return @("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$file`" -$sw") }
+            }
+            return @(
+                "rem VUL IN: wat maakt $file ongedaan? Zet bijv. $base-uninstall$ext in het pakket (Toevoegen... > Alleen meenemen),"
+                "rem         geef het script een schakelaar -Uninstall, of schrijf de regels hier."
+            )
+        }
+        default
+        {
+            # EXE: op naam verwijderen (MSI-productcode of eigen verwijderprogramma)
+            if (-not $script:ExeNameCache) { $script:ExeNameCache = @{} }
+            if (-not $script:ExeNameCache.ContainsKey($path))
+            {
+                $pn = ''
+                if (Test-Path -LiteralPath $path) { try { $pn = "$((Get-InstallerInfo $path).ProductName)" } catch { } }
+                $script:ExeNameCache[$path] = $pn
+            }
+            $pn = $script:ExeNameCache[$path]
+            if ($pn)
+            {
+                $exeArgs = if ("$($c.Kind)" -eq 'Inno') { '/VERYSILENT /NORESTART' } else { '/S' }
+                return @("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"Remove-App.ps1`" -Name `"$pn`" -ExeArgs `"$exeArgs`"")
+            }
+            return @("rem VUL IN: verwijdercommando voor $file.")
+        }
+    }
+}
+
+function Sync-UninstallComponents
+{
+    # Verwijderstappen voor de extra onderdelen (niet het hoofdonderdeel), in omgekeerde volgorde van installeren.
+    # Elk blok begint met 'rem Onderdeel: <bestand> ongedaan maken' en loopt tot de eerstvolgende lege regel.
+    # Een blok dat je zelf hebt aangepast blijft staan; een blok met 'VUL IN' wordt opnieuw gemaakt.
+    $text = "$($ui.TxtUninstallCmd.Text)"
+    if (-not $text.Trim()) { return }
+    $comps = @(Get-ComponentList | Where-Object { $_ })
+    $mainIdx = -1
+    for ($i = 0; $i -lt $comps.Count; $i++) { if ($comps[$i].Main) { $mainIdx = $i; break } }
+
+    # Bestaande blokken uitlezen en weghalen
+    $lines = @($text -split "`r?`n")
+    $keep = New-Object System.Collections.Generic.List[string]
+    $old = @{}
+    for ($i = 0; $i -lt $lines.Count; $i++)
+    {
+        if ($lines[$i] -match '^rem Onderdeel: (.+) ongedaan maken$')
+        {
+            $name = $Matches[1]; $body = New-Object System.Collections.Generic.List[string]
+            while ($i + 1 -lt $lines.Count -and $lines[$i + 1].Trim()) { $i++; $body.Add($lines[$i]) }
+            if ($i + 1 -lt $lines.Count) { $i++ }   # de lege regel erna hoort bij het blok
+            $old[$name] = $body
+            continue
+        }
+        $keep.Add($lines[$i])
+    }
+    $makeBlock = {
+        param($c)
+        $b = New-Object System.Collections.Generic.List[string]
+        $b.Add("rem Onderdeel: $($c.File) ongedaan maken")
+        $prev = $old["$($c.File)"]
+        if ($prev -and -not ($prev -match 'VUL IN')) { $b.AddRange([string[]]@($prev)) }
+        else { $b.AddRange([string[]]@(Get-ComponentUndo $c)) }
+        $b.Add('')
+        return ,$b
+    }
+    # Na het hoofdonderdeel geinstalleerd -> eerst ongedaan maken (voor de verwijderregel van de app);
+    # ervoor geinstalleerd (bijv. een runtime) -> daarna (voor de laatste 'exit /b').
+    $before = New-Object System.Collections.Generic.List[string]
+    $after  = New-Object System.Collections.Generic.List[string]
+    for ($i = $comps.Count - 1; $i -ge 0; $i--)
+    {
+        if ($i -eq $mainIdx) { continue }
+        $blk = & $makeBlock $comps[$i]
+        if ($mainIdx -ge 0 -and $i -lt $mainIdx) { $after.AddRange([string[]]@($blk)) } else { $before.AddRange([string[]]@($blk)) }
+    }
+    # Plek van de verwijderregel van de app: de eerste regel na de kop die geen rem/leeg is
+    $appAt = -1
+    for ($i = 0; $i -lt $keep.Count; $i++) { if ($keep[$i].Trim() -and $keep[$i] -notmatch '^\s*(rem\b|::|@?echo off)') { $appAt = $i; break } }
+    $exitAt = -1
+    for ($i = $keep.Count - 1; $i -ge 0; $i--) { if ($keep[$i] -match '^\s*exit\s+/b') { $exitAt = $i; break } }
+    if ($after.Count)
+    {
+        if ($exitAt -ge 0) { $keep.InsertRange($exitAt, [string[]]@($after)) } else { $keep.Add(''); $keep.AddRange([string[]]@($after)) }
+    }
+    if ($before.Count)
+    {
+        if ($appAt -lt 0) { $appAt = if ($exitAt -ge 0) { $exitAt } else { $keep.Count } }
+        $keep.InsertRange($appAt, [string[]]@($before))
+    }
+    $new = ($keep -join "`r`n") -replace "(`r`n){3,}", "`r`n`r`n"
+    if ($new -ne $text) { $ui.TxtUninstallCmd.Text = $new }
+}
+
 function Sync-UninstallCleanup
 {
     # Verwijderstappen gelijk houden met de kopieerstappen: elk bestand dat de installatie ergens neerzet,
     # ruimt het verwijderen weer op (en de map, als die daarna leeg is). Eigen regels blijven staan.
+    Sync-UninstallComponents   # eerst de verwijderstappen voor de extra onderdelen
     $text = "$($ui.TxtUninstallCmd.Text)"
     if (-not $text.Trim()) { return }
     # Oude opruimblokken weghalen
@@ -3235,7 +3401,7 @@ $ui.BtnInstaller.Add_Click({
     }
     Update-InstallPreview
 
-    if (-not $ui.TxtUninstallCmd.Text.Trim() -or $ui.TxtUninstallCmd.Text -match 'MijnApp|VUL IN')
+    if (-not $ui.TxtUninstallCmd.Text.Trim() -or $ui.TxtUninstallCmd.Text -match 'MijnApp|VUL IN: het verwijdercommando')
     {
         $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
         Sync-UninstallCleanup
