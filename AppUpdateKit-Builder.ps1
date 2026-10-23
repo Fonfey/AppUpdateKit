@@ -918,6 +918,18 @@ function Get-InvalidMsiSwitch([string]$Arguments)
     return @(("$Arguments" -split '\s+') | Where-Object { $_ -like '/*' -and $_ -notmatch $ok })
 }
 
+function Test-InKitOutput([string]$Path)
+{
+    # Ligt dit pad in de Output-map van de kit? Dan bouwt 2-Bouw-pakket.ps1 altijd in Output\<AppId>\<versie>.
+    try
+    {
+        $c = [System.IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($Path)).TrimEnd('\')
+        $o = [System.IO.Path]::GetFullPath((Join-Path $KitRoot 'Output')).TrimEnd('\')
+        return ($c -eq $o -or $c.StartsWith($o + '\', [System.StringComparison]::OrdinalIgnoreCase))
+    }
+    catch { return $false }
+}
+
 function Test-InAppsFolder([string]$Path)
 {
     # Ligt dit pad in Apps\ van de kit (de app-mappen)? Daar mag het pakket niet komen.
@@ -1775,7 +1787,7 @@ $xamlText = @'
                   <Button DockPanel.Dock="Right" Name="BtnOutputFolder" Content="Kiezen..." Margin="8,2,0,8"/>
                   <TextBox Name="TxtOutputFolder"/>
                 </DockPanel>
-                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Je kunt het pad ook typen of plakken."/>
+                <TextBlock Name="TxtOutputHint" Style="{StaticResource Hint}" Text="Klik op Kiezen... en kies de versiemap, bijv. ...\versies\2.4.0. De Builder zet er \intune-package achter. Kies je de Output-map van de kit, dan komt het pakket in Output\&lt;AppId&gt;\&lt;versie&gt;. Je kunt het pad ook typen of plakken."/>
               </StackPanel>
             </Border>
 
@@ -3109,6 +3121,8 @@ function Confirm-OutputFolder
         return $false
     }
     if (Test-Path -LiteralPath $path -PathType Container) { return $true }
+    # In de Output-map van de kit: het bouwscript maakt zelf Output\<AppId>\<versie>; hier niets aanmaken
+    if (Test-InKitOutput $path) { return $true }
     # Schijf of netwerkshare bereikbaar? (I:\ of \\server\share)
     $root = if ($path -match '^(\\\\[^\\]+\\[^\\]+)') { $Matches[1] } else { [System.IO.Path]::GetPathRoot($path) }
     if (-not $root -or -not (Test-Path -LiteralPath $root))
@@ -3551,6 +3565,13 @@ $ui.BtnOutputFolder.Add_Click({
         if (Test-InAppsFolder $chosen)
         {
             Show-Error "Deze map ligt in de app-map van de kit ($chosen).`n`nHet pakket mag daar niet komen: dan kopieert elke build zichzelf in het pakket. Kies de versiemap naast de installer, bijv. ...\versies\2.4.0."
+            return
+        }
+        if (Test-InKitOutput $chosen)
+        {
+            # In de Output-map van de kit is de indeling vast: Output\<AppId>\<versie>. Geen \intune-package erachter.
+            $ui.TxtOutputFolder.Text = Join-Path (Join-Path $KitRoot 'Output') $script:CurrentApp
+            Set-Status "Pakket komt in de kit: Output\$($script:CurrentApp)\<versie> (elke versie een eigen map)."
             return
         }
         $sub = $KitSettings.PakketSubmap
