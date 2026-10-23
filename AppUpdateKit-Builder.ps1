@@ -2498,6 +2498,587 @@ function Get-RegUndoLines([string]$Path)
     return $out
 }
 
+#region Script lezen en ongedaan maken
+# De Builder leest een installatiescript (.ps1 of .cmd) en zoekt wat het blijvend aanmaakt:
+# snelkoppelingen, bestanden, mappen, registerwaarden, geplande taken, services, firewallregels en
+# omgevingsvariabelen. Daarvoor maakt hij verwijderregels (voor uninstall-app.cmd), in omgekeerde volgorde.
+# Wat hij niet kan terugdraaien, komt als 'rem VUL IN' in het blok, met het regelnummer.
+
+function ConvertTo-CmdPath([string]$p)
+{
+    # PowerShell-pad -> pad voor cmd.exe (register: HKLM:\ -> HKLM\)
+    if ($null -eq $p) { return $null }
+    $p = $p.Trim().Replace('/', '\')
+    $p = $p -replace '^(?i)Microsoft\.PowerShell\.Core\\Registry::', '' -replace '^(?i)Registry::', ''
+    $p = $p -replace '^(?i)HKEY_LOCAL_MACHINE', 'HKLM' -replace '^(?i)HKEY_CURRENT_USER', 'HKCU' -replace '^(?i)HKEY_CLASSES_ROOT', 'HKCR' -replace '^(?i)HKEY_USERS', 'HKU'
+    $p = $p -replace '^(?i)(HKLM|HKCU|HKCR|HKU):\\?', '$1\'
+    $p = $p -replace '^\.\\', ''
+    $p = $p -replace '(?<!^)\\{2,}', '\'
+    return $p.TrimEnd('\')
+}
+
+function Test-RegPath([string]$p) { return ($p -match '^(?i)(HKLM|HKCU|HKCR|HKU)(\\|$)') }
+
+function Get-PsFolderPath([string]$Name)
+{
+    switch -Regex ($Name)
+    {
+        '^(?i)CommonDesktopDirectory$' { return '%PUBLIC%\Desktop' }
+        '^(?i)(Desktop|DesktopDirectory)$' { return '%USERPROFILE%\Desktop' }
+        '^(?i)CommonStartMenu$'        { return '%ProgramData%\Microsoft\Windows\Start Menu' }
+        '^(?i)CommonPrograms$'         { return '%ProgramData%\Microsoft\Windows\Start Menu\Programs' }
+        '^(?i)CommonStartup$'          { return '%ProgramData%\Microsoft\Windows\Start Menu\Programs\Startup' }
+        '^(?i)StartMenu$'              { return '%APPDATA%\Microsoft\Windows\Start Menu' }
+        '^(?i)Programs$'               { return '%APPDATA%\Microsoft\Windows\Start Menu\Programs' }
+        '^(?i)Startup$'                { return '%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup' }
+        '^(?i)CommonApplicationData$'  { return '%ProgramData%' }
+        '^(?i)ApplicationData$'        { return '%APPDATA%' }
+        '^(?i)LocalApplicationData$'   { return '%LOCALAPPDATA%' }
+        '^(?i)ProgramFiles$'           { return '%ProgramFiles%' }
+        '^(?i)ProgramFilesX86$'        { return '%ProgramFiles(x86)%' }
+        '^(?i)CommonDocuments$'        { return '%PUBLIC%\Documents' }
+        '^(?i)Windows$'                { return '%SystemRoot%' }
+        '^(?i)System$'                 { return '%SystemRoot%\System32' }
+    }
+    return $null
+}
+
+function Resolve-PsValue($Ast, [hashtable]$Vars)
+{
+    # Geeft de mogelijke tekstwaarden van een expressie terug (meestal één), of $null als het niet te bepalen is
+    if ($null -eq $Ast) { return $null }
+    $A = [System.Management.Automation.Language.Ast]
+    switch ($Ast.GetType().Name)
+    {
+        'StringConstantExpressionAst' { return ,@($Ast.Value) }
+        'ConstantExpressionAst'       { return ,@("$($Ast.Value)") }
+        'ExpandableStringExpressionAst'
+        {
+            $results = @("$($Ast.Value)")
+            # Neste expressies vervangen, van achter naar voren (offsets blijven dan kloppen)
+            $raw = $Ast.Extent.Text; $q = 1
+            if ($raw.StartsWith('@')) { return $null }
+            $text = $raw.Substring($q, $raw.Length - 2 * $q)
+            $base = $Ast.Extent.StartOffset + $q
+            $parts = @($Ast.NestedExpressions | Sort-Object { $_.Extent.StartOffset } -Descending)
+            $vals = @($text)
+            foreach ($n in $parts)
+            {
+                $r = Resolve-PsValue $n $Vars
+                if ($null -eq $r) { return $null }
+                $s = $n.Extent.StartOffset - $base; $len = $n.Extent.EndOffset - $n.Extent.StartOffset
+                $vals = @(foreach ($v in $vals) { foreach ($x in $r) { $v.Substring(0, $s) + $x + $v.Substring($s + $len) } })
+                if ($vals.Count -gt 20) { return $null }
+            }
+            # `-escapes (zoals `$) weghalen
+            return ,@($vals | ForEach-Object { $_ -replace '`(.)', '$1' })
+        }
+        'VariableExpressionAst'
+        {
+            $vp = $Ast.VariablePath
+            if ($vp.IsDriveQualified -and $vp.DriveName -ieq 'env') { return ,@("%$($vp.UserPath.Substring(4))%") }
+            $name = $vp.UserPath
+            if ($name -ieq 'PSScriptRoot' -or $name -ieq 'PWD') { return ,@('.') }
+            if ($Vars.ContainsKey($name.ToLower())) { return ,@($Vars[$name.ToLower()]) }
+            return $null
+        }
+        'ParenExpressionAst' { return Resolve-PsValue $Ast.Pipeline $Vars }
+        'SubExpressionAst'
+        {
+            $st = @($Ast.SubExpression.Statements)
+            if ($st.Count -eq 1) { return Resolve-PsValue $st[0] $Vars }
+            return $null
+        }
+        'PipelineAst'
+        {
+            $el = @($Ast.PipelineElements)
+            if ($el.Count -eq 1) { return Resolve-PsValue $el[0] $Vars }
+            return $null
+        }
+        'CommandExpressionAst' { return Resolve-PsValue $Ast.Expression $Vars }
+        'ArrayLiteralAst'
+        {
+            $all = @(); foreach ($e in $Ast.Elements) { $r = Resolve-PsValue $e $Vars; if ($null -eq $r) { return $null }; $all += $r }
+            return ,$all
+        }
+        'ArrayExpressionAst'
+        {
+            $all = @()
+            foreach ($st in $Ast.SubExpression.Statements) { $r = Resolve-PsValue $st $Vars; if ($null -eq $r) { return $null }; $all += $r }
+            return ,$all
+        }
+        'BinaryExpressionAst'
+        {
+            if ($Ast.Operator -ne 'Plus') { return $null }
+            $l = Resolve-PsValue $Ast.Left $Vars; $r = Resolve-PsValue $Ast.Right $Vars
+            if ($null -eq $l -or $null -eq $r) { return $null }
+            return ,@(foreach ($a in $l) { foreach ($b in $r) { "$a$b" } })
+        }
+        'InvokeMemberExpressionAst'
+        {
+            $m = "$($Ast.Member.Value)"; $t = "$($Ast.Expression.Extent.Text)"
+            $args1 = @($Ast.Arguments)
+            if ($Ast.Static -and $t -match '(?i)Environment\]$' -and $m -ieq 'GetFolderPath' -and $args1.Count)
+            {
+                $r = Resolve-PsValue $args1[0] $Vars
+                if ($null -eq $r) { $r = @(($args1[0].Extent.Text -replace '^.*::', '' -replace "['`"\)]", '')) }
+                $f = Get-PsFolderPath ($r[0] -replace '^.*::', '')
+                if ($f) { return ,@($f) }
+                return $null
+            }
+            if ($Ast.Static -and $t -match '(?i)Environment\]$' -and $m -ieq 'GetEnvironmentVariable' -and $args1.Count)
+            {
+                $r = Resolve-PsValue $args1[0] $Vars; if ($r) { return ,@("%$($r[0])%") }
+                return $null
+            }
+            if ($Ast.Static -and $t -match '(?i)IO\.Path\]$' -and $m -ieq 'Combine')
+            {
+                $res = @('')
+                foreach ($a in $args1)
+                {
+                    $r = Resolve-PsValue $a $Vars; if ($null -eq $r) { return $null }
+                    $res = @(foreach ($x in $res) { foreach ($y in $r) { if ($x) { $x.TrimEnd('\') + '\' + $y.TrimStart('\') } else { $y } } })
+                }
+                return ,$res
+            }
+            return $null
+        }
+        'CommandAst'
+        {
+            $name = "$($Ast.GetCommandName())"
+            if ($name -ieq 'Join-Path')
+            {
+                $a = Get-PsCommandArgs $Ast
+                $p = if ($a.Named['path']) { $a.Named['path'] } elseif ($a.Positional.Count -ge 1) { $a.Positional[0] } else { $null }
+                $c = if ($a.Named['childpath']) { $a.Named['childpath'] } elseif ($a.Named['path'] -and $a.Positional.Count -ge 1) { $a.Positional[0] } elseif ($a.Positional.Count -ge 2) { $a.Positional[1] } else { $null }
+                $pv = Resolve-PsValue $p $Vars; $cv = Resolve-PsValue $c $Vars
+                if ($null -eq $pv -or $null -eq $cv) { return $null }
+                return ,@(foreach ($x in $pv) { foreach ($y in $cv) { $x.TrimEnd('\') + '\' + $y.TrimStart('\') } })
+            }
+            return $null
+        }
+    }
+    return $null
+}
+
+function Get-PsCommandArgs($Cmd)
+{
+    # Parameters van een opdracht: Named (naam in kleine letters -> waarde-AST; schakelaar -> $true) en Positional
+    $named = @{}; $pos = New-Object System.Collections.ArrayList
+    $el = @($Cmd.CommandElements)
+    for ($i = 1; $i -lt $el.Count; $i++)
+    {
+        $e = $el[$i]
+        if ($e -is [System.Management.Automation.Language.CommandParameterAst])
+        {
+            $n = $e.ParameterName.ToLower()
+            if ($e.Argument) { $named[$n] = $e.Argument }
+            elseif ($i + 1 -lt $el.Count -and $el[$i + 1] -isnot [System.Management.Automation.Language.CommandParameterAst] -and
+                    $n -notin 'force', 'recurse', 'passthru', 'whatif', 'confirm', 'verbose', 'wait', 'nonewwindow', 'append', 'noclobber', 'container')
+            { $named[$n] = $el[$i + 1]; $i++ }
+            else { $named[$n] = $true }
+        }
+        else { [void]$pos.Add($e) }
+    }
+    return @{ Named = $named; Positional = $pos }
+}
+
+function Get-NamedArg($A, [string[]]$Names, [int]$Position = -1)
+{
+    foreach ($n in $Names) { foreach ($k in $A.Named.Keys) { if ($k -eq $n -or ($k.Length -ge 3 -and $n.StartsWith($k))) { $v = $A.Named[$k]; if ($v -isnot [bool]) { return $v } } } }
+    if ($Position -ge 0 -and $A.Positional.Count -gt $Position) { return $A.Positional[$Position] }
+    return $null
+}
+
+function Get-UndoForFile([string]$p, [switch]$Folder, [switch]$Tree)
+{
+    if ($Tree) { return "if exist `"$p\`" rd /S /Q `"$p`"" }
+    if ($Folder) { return "rd `"$p`" 2>nul" }
+    return "if exist `"$p`" del /F /Q `"$p`""
+}
+
+function Get-EnvUndo([string]$Name, [bool]$Machine)
+{
+    if ($Machine) { return "reg.exe delete `"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`" /v `"$Name`" /f >nul 2>&1" }
+    return "reg.exe delete `"HKCU\Environment`" /v `"$Name`" /f >nul 2>&1"
+}
+
+function Get-CmdLineUndo([string]$Line, [string]$AppDir)
+{
+    # Eén cmd-regel (ook reg.exe/schtasks/... vanuit PowerShell): @{ Undo = @(...) } , @{ Unknown = $true } of $null (niets blijvends)
+    $l = $Line.Trim() -replace '^@', ''
+    if (-not $l -or $l -match '^(?i)(rem\b|::|:)') { return $null }
+    # Tokens met aanhalingstekens
+    $tok = @([regex]::Matches($l, '"[^"]*"|\S+') | ForEach-Object { $_.Value })
+    $uq = @($tok | ForEach-Object { $_.Trim('"') })
+    $cmd = ($uq[0] -replace '(?i)\.exe$', '').ToLower()
+    $opt = { param([string]$o) for ($i = 1; $i -lt $uq.Count - 1; $i++) { if ($uq[$i] -ieq $o) { return $uq[$i + 1] } }; return $null }
+    $has = { param([string]$o) return [bool]($uq | Where-Object { $_ -ieq $o }) }
+    # Doorverwijzing naar een bestand: echo ... > bestand (>> voegt toe aan een bestaand bestand: niet terug te draaien)
+    if ($l -match '>>\s*"?[^"\s]' -and $l -notmatch '>>\s*nul') { return @{ Unknown = $true } }
+    if ($l -match '(?<!>)>\s*"?([^">|&]+?)"?\s*$' -and $l -notmatch '>\s*nul\s*$' -and $l -notmatch '2>&1\s*$')
+    {
+        $f = ConvertTo-CmdPath $Matches[1]
+        if ($l -match '>>') { return @{ Unknown = $true } }
+        return @{ Undo = @(Get-UndoForFile $f) }
+    }
+    switch -Regex ($cmd)
+    {
+        '^(echo|set|setlocal|endlocal|if|exit|goto|cd|chdir|pushd|popd|timeout|ping|start|del|erase|rd|rmdir|title|cls|pause|for|shift|ver|call|net|taskkill|tasklist|whoami|hostname|powershell|pwsh|wscript|cscript|icacls|attrib|choice|find|findstr|type|dir|wmic|msg|explorer|gpupdate|klist|ipconfig|nslookup|w32tm)$'
+        {
+            if ($cmd -eq 'net' -and $uq.Count -gt 1 -and $uq[1] -ieq 'use') { return $null }
+            if ($cmd -in 'powershell', 'pwsh', 'call', 'wscript', 'cscript', 'icacls', 'attrib', 'wmic') { return @{ Unknown = $true } }
+            return $null
+        }
+        '^(md|mkdir)$' { return @{ Undo = @(Get-UndoForFile (ConvertTo-CmdPath $uq[1]) -Folder) } }
+        '^(copy|xcopy|move)$'
+        {
+            $args2 = @($uq | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^/' })
+            if ($args2.Count -lt 2) { return @{ Unknown = $true } }
+            $src = $args2[0]; $dst = ConvertTo-CmdPath $args2[1]
+            if ($src -match '[\*\?]') { return @{ Unknown = $true } }
+            $leaf = Split-Path ($src.Replace('/', '\')) -Leaf
+            $isDir = $args2[1].EndsWith('\') -or -not [System.IO.Path]::GetExtension($dst)
+            if ($cmd -eq 'xcopy' -and ((& $has '/s') -or (& $has '/e'))) { return @{ Undo = @(Get-UndoForFile $dst -Tree) } }
+            return @{ Undo = @(Get-UndoForFile $(if ($isDir) { "$dst\$leaf" } else { $dst })) }
+        }
+        '^robocopy$'
+        {
+            $args2 = @($uq | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^/' })
+            if ($args2.Count -lt 2) { return @{ Unknown = $true } }
+            $dst = ConvertTo-CmdPath $args2[1]
+            if ($args2.Count -ge 3 -and -not ((& $has '/s') -or (& $has '/e') -or (& $has '/mir'))) {
+                return @{ Undo = @($args2 | Select-Object -Skip 2 | ForEach-Object { if ($_ -match '[\*\?]') { "rem VUL IN: bestanden '$_' uit $dst" } else { Get-UndoForFile "$dst\$_" } }) }
+            }
+            return @{ Undo = @(Get-UndoForFile $dst -Tree) }
+        }
+        '^mklink$'
+        {
+            $args2 = @($uq | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^/' })
+            if (-not $args2.Count) { return @{ Unknown = $true } }
+            $link = ConvertTo-CmdPath $args2[0]
+            if ((& $has '/d') -or (& $has '/j')) { return @{ Undo = @("rd `"$link`" 2>nul") } }
+            return @{ Undo = @(Get-UndoForFile $link) }
+        }
+        '^reg$'
+        {
+            if ($uq.Count -lt 3) { return @{ Unknown = $true } }
+            $sub = $uq[1].ToLower(); $key = ConvertTo-CmdPath $uq[2]
+            if ($sub -eq 'add')
+            {
+                $v = & $opt '/v'
+                if ($v) { return @{ Undo = @("reg.exe delete `"$key`" /v `"$v`" /f >nul 2>&1") } }
+                if (& $has '/ve') { return @{ Undo = @("reg.exe delete `"$key`" /ve /f >nul 2>&1") } }
+                return @{ Undo = @("reg.exe delete `"$key`" /f >nul 2>&1") }
+            }
+            if ($sub -eq 'import')
+            {
+                $f = $uq[2]; $full = if ($AppDir) { Join-Path $AppDir (Split-Path $f -Leaf) } else { $f }
+                $r = @(Get-RegUndoLines $full); if ($r.Count) { return @{ Undo = $r } }
+                return @{ Unknown = $true }
+            }
+            if ($sub -in 'query', 'delete', 'export', 'compare') { return $null }
+            return @{ Unknown = $true }
+        }
+        '^schtasks$'
+        {
+            if (& $has '/create') { $tn = & $opt '/tn'; if ($tn) { return @{ Undo = @("schtasks.exe /Delete /TN `"$tn`" /F >nul 2>&1") } } ; return @{ Unknown = $true } }
+            if ((& $has '/change') -and ((& $has '/enable') -or (& $has '/disable'))) { return @{ Unknown = $true } }
+            return $null
+        }
+        '^sc$'
+        {
+            if ($uq.Count -ge 3 -and $uq[1] -ieq 'create') { return @{ Undo = @("sc.exe stop `"$($uq[2])`" >nul 2>&1", "sc.exe delete `"$($uq[2])`" >nul 2>&1") } }
+            if ($uq.Count -ge 2 -and $uq[1] -imatch '^(start|stop|query|queryex|qc)$') { return $null }
+            return @{ Unknown = $true }
+        }
+        '^netsh$'
+        {
+            if ($l -match '(?i)firewall\s+add\s+rule\s+.*name\s*=\s*("([^"]+)"|(\S+))')
+            {
+                $n = if ($Matches[2]) { $Matches[2] } else { $Matches[3] }
+                return @{ Undo = @("netsh.exe advfirewall firewall delete rule name=`"$n`" >nul 2>&1") }
+            }
+            return @{ Unknown = $true }
+        }
+        '^setx$'
+        {
+            if ($uq.Count -ge 2) { return @{ Undo = @(Get-EnvUndo $uq[1] (& $has '/m')) } }
+            return @{ Unknown = $true }
+        }
+        '^(regsvr32|msiexec|dism|bcdedit|certutil|wusa|pnputil)$' { return @{ Unknown = $true } }
+    }
+    # Een ander programma (bijv. een setup.exe): niet bekend wat het blijvend doet
+    return @{ Unknown = $true }
+}
+
+function Get-PsScriptUndo([string]$Path)
+{
+    # Leest een PowerShell-script; geeft @{ Undo = regels (in uitvoervolgorde); Unknown = 'regel N: tekst' } terug
+    $undo = New-Object System.Collections.ArrayList; $unknown = New-Object System.Collections.ArrayList
+    $tokens = $null; $errs = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errs)
+    $appDir = Split-Path $Path -Parent
+    $vars = @{}
+    $harmless = '^(?i)(Get|Test|Write|Out|Join|Split|Select|Where|ForEach|Sort|Measure|Wait|Read|Format|ConvertTo|ConvertFrom|Resolve|Start-Sleep|Start-Transcript|Stop-Transcript|Stop|Remove|Unregister|Clear|Import-Module|New-Object|Add-Type|Invoke-WebRequest|Invoke-RestMethod|Compare|Group|Tee|Trace|Show|Exit|Return|Throw|Push|Pop|Set-Location|Set-Variable|New-Variable|Set-StrictMode|Set-ExecutionPolicy|Get-Date|Start-Process)'
+    $nodes = @($ast.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.AssignmentStatementAst] -or
+        $n -is [System.Management.Automation.Language.CommandAst] -or
+        $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+        $n -is [System.Management.Automation.Language.ForEachStatementAst] }, $true) | Sort-Object { $_.Extent.StartOffset })
+    $where = { param($n) "regel $($n.Extent.StartLineNumber): $(($n.Extent.Text -split "`r?`n")[0].Trim())" }
+    foreach ($n in $nodes)
+    {
+        $T = $n.GetType().Name
+        if ($T -eq 'AssignmentStatementAst')
+        {
+            if ($n.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and -not $n.Left.VariablePath.IsDriveQualified)
+            {
+                $name = $n.Left.VariablePath.UserPath.ToLower()
+                $r = Resolve-PsValue $n.Right $vars
+                if ($null -ne $r -and $n.Operator -eq 'Equals') { $vars[$name] = @($r) }
+                elseif ($null -ne $r -and $n.Operator -eq 'PlusEquals' -and $vars.ContainsKey($name)) { $vars[$name] = @($vars[$name]) + @($r) }
+                else { $vars.Remove($name) }
+            }
+            elseif ($n.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.DriveName -ieq 'env')
+            {
+                # $env:X = ... geldt alleen voor dit proces: niets blijvends
+            }
+            continue
+        }
+        if ($T -eq 'ForEachStatementAst')
+        {
+            $r = Resolve-PsValue $n.Condition $vars
+            $name = $n.Variable.VariablePath.UserPath.ToLower()
+            if ($null -ne $r) { $vars[$name] = @($r) } else { $vars.Remove($name) }
+            continue
+        }
+        if ($T -eq 'InvokeMemberExpressionAst')
+        {
+            $m = "$($n.Member.Value)"
+            if ($m -ieq 'CreateShortcut' -and -not $n.Static)
+            {
+                $r = Resolve-PsValue @($n.Arguments)[0] $vars
+                if ($null -eq $r) { [void]$unknown.Add((& $where $n) + ' (pad van de snelkoppeling niet te bepalen)') }
+                else { foreach ($p in $r) { [void]$undo.Add((Get-UndoForFile (ConvertTo-CmdPath $p))) } }
+            }
+            elseif ($m -ieq 'SetEnvironmentVariable' -and $n.Static)
+            {
+                $a = @($n.Arguments); $r = Resolve-PsValue $a[0] $vars
+                $scope = if ($a.Count -ge 3) { "$($a[2].Extent.Text)" } else { 'Process' }
+                if ($scope -match '(?i)Machine') { if ($r) { [void]$undo.Add((Get-EnvUndo $r[0] $true)) } else { [void]$unknown.Add((& $where $n)) } }
+                elseif ($scope -match '(?i)User') { if ($r) { [void]$undo.Add((Get-EnvUndo $r[0] $false)) } else { [void]$unknown.Add((& $where $n)) } }
+            }
+            elseif ($m -imatch '^(WriteAllText|WriteAllBytes|WriteAllLines|Copy)$' -and $n.Static -and "$($n.Expression.Extent.Text)" -match '(?i)IO\.File\]$')
+            {
+                $a = @($n.Arguments); $target = if ($m -ieq 'Copy') { $a[1] } else { $a[0] }
+                $r = Resolve-PsValue $target $vars
+                if ($r) { foreach ($p in $r) { [void]$undo.Add((Get-UndoForFile (ConvertTo-CmdPath $p))) } } else { [void]$unknown.Add((& $where $n)) }
+            }
+            elseif ($m -ieq 'CreateDirectory' -and $n.Static)
+            {
+                $r = Resolve-PsValue @($n.Arguments)[0] $vars
+                if ($r) { foreach ($p in $r) { [void]$undo.Add((Get-UndoForFile (ConvertTo-CmdPath $p) -Folder)) } } else { [void]$unknown.Add((& $where $n)) }
+            }
+            continue
+        }
+        # CommandAst
+        $name = "$($n.GetCommandName())"
+        if (-not $name)
+        {
+            # & "pad\iets.exe" ... : een ander programma
+            if ($n.InvocationOperator -ne 'Unknown') { [void]$unknown.Add((& $where $n)) }
+            continue
+        }
+        $a = Get-PsCommandArgs $n
+        $resolve1 = { param($ast) if ($null -eq $ast) { return $null }; $r = Resolve-PsValue $ast $vars; if ($null -eq $r) { return $null }; return ,@($r | ForEach-Object { ConvertTo-CmdPath $_ }) }
+        switch -Regex ($name)
+        {
+            '^(?i)(New-Item|ni|md|mkdir)$'
+            {
+                $p = & $resolve1 (Get-NamedArg $a 'path' 0); $nm = Get-NamedArg $a 'name'
+                $type = "$(& $resolve1 (Get-NamedArg $a 'itemtype','type'))"
+                if ($name -imatch '^(md|mkdir)$') { $type = 'Directory' }
+                if ($nm) { $nv = Resolve-PsValue $nm $vars; if ($null -eq $nv -or $null -eq $p) { $p = $null } else { $p = @(foreach ($x in $p) { foreach ($y in $nv) { "$x\$y" } }) } }
+                if ($null -eq $p) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($x in $p)
+                {
+                    if (Test-RegPath $x) { [void]$undo.Add("reg.exe delete `"$x`" /f >nul 2>&1") }
+                    elseif ($type -imatch 'Dir') { [void]$undo.Add((Get-UndoForFile $x -Folder)) }
+                    elseif ($type -imatch 'Junction|SymbolicLink|HardLink') { [void]$undo.Add("rd `"$x`" 2>nul"); [void]$undo.Add((Get-UndoForFile $x)) }
+                    else { [void]$undo.Add((Get-UndoForFile $x)) }
+                }
+                break
+            }
+            '^(?i)(New-ItemProperty|Set-ItemProperty|sp)$'
+            {
+                $p = & $resolve1 (Get-NamedArg $a 'path','literalpath' 0); $nv = Resolve-PsValue (Get-NamedArg $a 'name' 1) $vars
+                if ($null -eq $p -or $null -eq $nv) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($x in $p) { foreach ($y in $nv) { if (Test-RegPath $x) { [void]$undo.Add("reg.exe delete `"$x`" /v `"$y`" /f >nul 2>&1") } } }
+                break
+            }
+            '^(?i)(Set-Content|sc|Out-File|Export-Csv|Export-Clixml)$'
+            {
+                $p = & $resolve1 (Get-NamedArg $a 'path','literalpath','filepath' 0)
+                if ($a.Named.ContainsKey('append')) { [void]$unknown.Add((& $where $n) + ' (voegt toe aan een bestaand bestand)'); break }
+                if ($null -eq $p) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($x in $p) { [void]$undo.Add((Get-UndoForFile $x)) }
+                break
+            }
+            '^(?i)(Add-Content|ac)$' { [void]$unknown.Add((& $where $n) + ' (voegt toe aan een bestaand bestand)'); break }
+            '^(?i)(Copy-Item|copy|cp|cpi|Move-Item|move|mv|mi)$'
+            {
+                $src = Resolve-PsValue (Get-NamedArg $a 'path','literalpath' 0) $vars
+                $dst = & $resolve1 (Get-NamedArg $a 'destination' 1)
+                if ($null -eq $src -or $null -eq $dst -or ($src -match '[\*\?]')) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($s in $src) { foreach ($d in $dst)
+                {
+                    $leaf = Split-Path ($s.Replace('/', '\').TrimEnd('\')) -Leaf
+                    $srcIsDir = -not [System.IO.Path]::GetExtension($leaf)
+                    $dstIsDir = (Get-NamedArg $a 'destination' 1).Extent.Text -match '\\["'']?$' -or -not [System.IO.Path]::GetExtension($d)
+                    if ($srcIsDir) { [void]$undo.Add((Get-UndoForFile $(if ($dstIsDir -and $a.Named.ContainsKey('recurse') -and (Split-Path $d -Leaf) -ine $leaf) { "$d\$leaf" } else { $d }) -Tree)) }
+                    elseif ($dstIsDir) { [void]$undo.Add((Get-UndoForFile "$d\$leaf")) }
+                    else { [void]$undo.Add((Get-UndoForFile $d)) }
+                } }
+                break
+            }
+            '^(?i)Expand-Archive$'
+            {
+                $d = & $resolve1 (Get-NamedArg $a 'destinationpath' 1)
+                if ($d) { foreach ($x in $d) { [void]$undo.Add((Get-UndoForFile $x -Tree)) } } else { [void]$unknown.Add((& $where $n)) }
+                break
+            }
+            '^(?i)Register-ScheduledTask$'
+            {
+                $tn = Resolve-PsValue (Get-NamedArg $a 'taskname' 0) $vars; $tp = Resolve-PsValue (Get-NamedArg $a 'taskpath') $vars
+                if ($null -eq $tn) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($t in $tn) { $full = if ($tp) { ($tp[0].TrimEnd('\') + '\' + $t) } else { $t }; [void]$undo.Add("schtasks.exe /Delete /TN `"$full`" /F >nul 2>&1") }
+                break
+            }
+            '^(?i)New-Service$'
+            {
+                $sn = Resolve-PsValue (Get-NamedArg $a 'name' 0) $vars
+                if ($null -eq $sn) { [void]$unknown.Add((& $where $n)); break }
+                foreach ($s in $sn) { [void]$undo.Add("sc.exe stop `"$s`" >nul 2>&1"); [void]$undo.Add("sc.exe delete `"$s`" >nul 2>&1") }
+                break
+            }
+            '^(?i)New-NetFirewallRule$'
+            {
+                $dn = Resolve-PsValue (Get-NamedArg $a 'displayname') $vars; $nn = Resolve-PsValue (Get-NamedArg $a 'name') $vars
+                if ($dn) { foreach ($d in $dn) { [void]$undo.Add("netsh.exe advfirewall firewall delete rule name=`"$d`" >nul 2>&1") } }
+                elseif ($nn) { foreach ($d in $nn) { [void]$undo.Add("powershell.exe -NoProfile -Command `"Remove-NetFirewallRule -Name '$d' -ErrorAction SilentlyContinue`"") } }
+                else { [void]$unknown.Add((& $where $n)) }
+                break
+            }
+            '^(?i)(New-SmbMapping|New-PSDrive)$' { if ($a.Named.ContainsKey('persist') -or $name -ieq 'New-SmbMapping') { [void]$unknown.Add((& $where $n)) }; break }
+            '^(?i)Start-Process$'
+            {
+                # Een programma starten is niet blijvend; een installer of opdracht starten wel misschien
+                $fp = Resolve-PsValue (Get-NamedArg $a 'filepath' 0) $vars
+                $al = Get-NamedArg $a 'argumentlist' 1
+                if ($fp -and ($fp[0] -match '(?i)(^|\\)(reg|schtasks|sc|netsh|setx|cmd)(\.exe)?$'))
+                {
+                    $argText = if ($al) { $v = Resolve-PsValue $al $vars; if ($v) { $v -join ' ' } else { $null } } else { '' }
+                    if ($null -eq $argText) { [void]$unknown.Add((& $where $n)); break }
+                    $r = Get-CmdLineUndo ("$(Split-Path $fp[0] -Leaf) $argText" -replace '^(?i)cmd(\.exe)?\s+/c\s+', '') $appDir
+                    if ($r -and $r.Undo) { foreach ($u in $r.Undo) { [void]$undo.Add($u) } } elseif ($r -and $r.Unknown) { [void]$unknown.Add((& $where $n)) }
+                }
+                elseif ($fp -and ($fp[0] -match '(?i)msiexec|setup|install|\.msi$')) { [void]$unknown.Add((& $where $n)) }
+                break
+            }
+            '^(?i)(reg|reg\.exe|schtasks|schtasks\.exe|sc\.exe|netsh|netsh\.exe|setx|setx\.exe|robocopy|robocopy\.exe|xcopy|xcopy\.exe|cmd|cmd\.exe|regsvr32|regsvr32\.exe|msiexec|msiexec\.exe)$'
+            {
+                # Een cmd-opdracht vanuit PowerShell: argumenten oplossen en als cmd-regel lezen
+                $parts = @($name)
+                foreach ($e in @($n.CommandElements | Select-Object -Skip 1))
+                {
+                    if ($e -is [System.Management.Automation.Language.CommandParameterAst]) { $parts += $e.Extent.Text; continue }
+                    $v = Resolve-PsValue $e $vars
+                    if ($null -eq $v) { $parts = $null; break }
+                    $parts += $(if ($v[0] -match '\s') { "`"$($v[0])`"" } else { $v[0] })
+                }
+                if ($null -eq $parts) { [void]$unknown.Add((& $where $n)); break }
+                $text = ($parts -join ' ') -replace '^(?i)cmd(\.exe)?\s+/c\s+', ''
+                $r = Get-CmdLineUndo $text $appDir
+                if ($r -and $r.Undo) { foreach ($u in $r.Undo) { [void]$undo.Add($u) } } elseif ($r -and $r.Unknown) { [void]$unknown.Add((& $where $n)) }
+                break
+            }
+            default
+            {
+                if ($name -match $harmless) { break }
+                if ($name -match '^(?i)New-(ScheduledTask(Action|Trigger|Settings|SettingsSet|Principal)?|TimeSpan|Guid|CimSession|PSSession|Item(Property)?Value)$') { break }   # alleen een object maken
+                if ($name -match '^(?i)(New|Set|Add|Register|Install|Enable|Disable|Copy|Move|Rename|Import|Expand|Grant|Publish|Mount|Update|Initialize)-') { [void]$unknown.Add((& $where $n)); break }
+                if ($name -match '\.(exe|cmd|bat|ps1|msi)$' -or $name -match '\\') { [void]$unknown.Add((& $where $n)) }
+            }
+        }
+    }
+    return @{ Undo = $undo; Unknown = $unknown }
+}
+
+function Get-CmdScriptUndo([string]$Path)
+{
+    $undo = New-Object System.Collections.ArrayList; $unknown = New-Object System.Collections.ArrayList
+    $appDir = Split-Path $Path -Parent
+    $vars = @{}
+    $nr = 0
+    foreach ($raw in ([System.IO.File]::ReadAllText($Path) -split "`r?`n"))
+    {
+        $nr++
+        $line = $raw.Trim()
+        if (-not $line) { continue }
+        # Eigen variabelen (set NAAM=waarde) invullen: bij het verwijderen bestaan die niet meer
+        foreach ($k in @($vars.Keys)) { $line = [regex]::Replace($line, "%$([regex]::Escape($k))%", [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $vars[$k] }, 'IgnoreCase') }
+        $line = $line -replace '(?i)%~dp0\\?', ''
+        if ($line -match '^@?set\s+"?([^=/"]+)=([^"]*)"?\s*$') { $vars[$Matches[1].Trim()] = $Matches[2]; continue }
+        # if ... ( opdracht )  /  if ... opdracht  -> alleen de opdracht lezen
+        $cmdPart = $line -replace '^(?i)if\s+(not\s+)?(exist\s+("[^"]*"|\S+)|defined\s+\S+|errorlevel\s+\d+|"[^"]*"\s*==\s*"[^"]*"|\S+==\S+)\s+', ''
+        $cmdPart = $cmdPart.Trim().TrimStart('(').TrimEnd(')').Trim()
+        foreach ($piece in ($cmdPart -split '\s*&&?\s*'))
+        {
+            $r = Get-CmdLineUndo $piece $appDir
+            if ($r -and $r.Undo) { foreach ($u in $r.Undo) { [void]$undo.Add($u) } }
+            elseif ($r -and $r.Unknown) { [void]$unknown.Add("regel ${nr}: $($raw.Trim())") }
+        }
+    }
+    return @{ Undo = $undo; Unknown = $unknown }
+}
+
+function Get-ScriptUndo([string]$Path, [string]$File)
+{
+    # Verwijderregels voor een script, afgeleid uit de inhoud. Eerste regel: herkomst met een controlegetal,
+    # zodat de Builder later ziet of je het blok zelf hebt aangepast.
+    $res = $null
+    try
+    {
+        $res = if ($Path -match '(?i)\.ps1$') { Get-PsScriptUndo $Path } else { Get-CmdScriptUndo $Path }
+    }
+    catch { return $null }
+    $body = New-Object System.Collections.Generic.List[string]
+    # Omgekeerde volgorde: eerst bestanden, dan de mappen waar ze in stonden
+    $seen = @{}
+    for ($i = $res.Undo.Count - 1; $i -ge 0; $i--) { $u = $res.Undo[$i]; if (-not $seen.ContainsKey($u)) { $seen[$u] = 1; $body.Add($u) } }
+    foreach ($x in $res.Unknown) { $body.Add("rem VUL IN: niet automatisch terug te draaien, $x") }
+    if (-not $body.Count) { $body.Add("rem Het script maakt niets blijvends aan: er hoeft niets terug.") }
+    return ,(@(New-DerivedMarker $File $body) + @($body))
+}
+
+function Get-TextHash([string[]]$Lines)
+{
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $b = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(($Lines -join "`n").Trim()))
+    return (-join ($b[0..3] | ForEach-Object { $_.ToString('x2') }))
+}
+function New-DerivedMarker([string]$File, $Body) { return "rem Afgeleid uit $File door de Builder - pas gerust aan [#$(Get-TextHash @($Body))]" }
+function Test-UntouchedDerived($Lines)
+{
+    # Is dit blok nog precies zoals de Builder het uit het script afleidde?
+    $l = @($Lines)
+    if (-not $l.Count -or $l[0] -notmatch '^rem Afgeleid uit .+ \[#([0-9a-f]{8})\]$') { return $false }
+    $h = $Matches[1]
+    return ((Get-TextHash @($l | Select-Object -Skip 1)) -eq $h)
+}
+#endregion
+
 function Get-ComponentUndo($c)
 {
     # Verwijderregels die een onderdeel (geen hoofdonderdeel) ongedaan maken. 'VUL IN' = de Builder weet het niet.
@@ -2544,6 +3125,12 @@ function Get-ComponentUndo($c)
                 $sw = @($p | Where-Object { $_ -in 'Uninstall', 'Remove', 'Verwijderen', 'Verwijder' }) | Select-Object -First 1
                 if ($sw) { return @("powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$file`" -$sw") }
             }
+            # 3) Het script lezen en afleiden wat het aanmaakt
+            if ($dir -and (Test-Path -LiteralPath $path))
+            {
+                $d = Get-ScriptUndo $path $file
+                if ($d) { return $d }
+            }
             return @(
                 "rem VUL IN: wat maakt $file ongedaan? Zet bijv. $base-uninstall$ext in het pakket (Toevoegen... > Alleen meenemen),"
                 "rem         geef het script een schakelaar -Uninstall, of schrijf de regels hier."
@@ -2574,7 +3161,7 @@ function Sync-UninstallComponents
 {
     # Verwijderstappen voor de extra onderdelen (niet het hoofdonderdeel), in omgekeerde volgorde van installeren.
     # Elk blok begint met 'rem Onderdeel: <bestand> ongedaan maken' en loopt tot de eerstvolgende lege regel.
-    # Een blok dat je zelf hebt aangepast blijft staan; een blok met 'VUL IN' wordt opnieuw gemaakt.
+    # Een blok dat je zelf hebt aangepast blijft staan; een blok dat nog niet is ingevuld of nog is zoals de Builder het afleidde, wordt opnieuw gemaakt.
     $text = "$($ui.TxtUninstallCmd.Text)"
     if (-not $text.Trim()) { return }
     $comps = @(Get-ComponentList | Where-Object { $_ })
@@ -2602,7 +3189,11 @@ function Sync-UninstallComponents
         $b = New-Object System.Collections.Generic.List[string]
         $b.Add("rem Onderdeel: $($c.File) ongedaan maken")
         $prev = $old["$($c.File)"]
-        if ($prev -and -not ($prev -match 'VUL IN')) { $b.AddRange([string[]]@($prev)) }
+        # Opnieuw maken: nog niet ingevuld (VUL IN, niet afgeleid) of nog precies zoals de Builder het uit het script afleidde.
+        # Een blok dat je zelf hebt aangepast blijft staan.
+        $derived = $prev -and @($prev)[0] -match '^rem Afgeleid uit '
+        $regen = (-not $prev) -or (Test-UntouchedDerived $prev) -or ((-not $derived) -and ($prev -match 'VUL IN'))
+        if (-not $regen) { $b.AddRange([string[]]@($prev)) }
         else { $b.AddRange([string[]]@(Get-ComponentUndo $c)) }
         $b.Add('')
         return ,$b
