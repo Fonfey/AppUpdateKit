@@ -2852,7 +2852,7 @@ function Invoke-PsUndoScan($Root, [hashtable]$Vars, $Undo, $Unknown, [hashtable]
 {
     # ($Vars/$Undo/$Unknown/$AppDir zijn hieronder $vars/$undo/$unknown/$appDir: PowerShell kijkt niet naar hoofdletters)
     $harmless = '^(?i)(Get|Test|Write|Out|Join|Split|Select|Where|ForEach|Sort|Measure|Wait|Read|Format|ConvertTo|ConvertFrom|Resolve|Start-Sleep|Start-Transcript|Stop-Transcript|Stop|Remove|Unregister|Clear|Import-Module|New-Object|Add-Type|Invoke-WebRequest|Invoke-RestMethod|Compare|Group|Tee|Trace|Show|Exit|Return|Throw|Push|Pop|Set-Location|Set-Variable|New-Variable|Set-StrictMode|Set-ExecutionPolicy|Get-Date|Start-Process)'
-    $nodes = @($ast.FindAll({ param($n)
+    $nodes = @($Root.FindAll({ param($n)
         $n -is [System.Management.Automation.Language.AssignmentStatementAst] -or
         $n -is [System.Management.Automation.Language.CommandAst] -or
         $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
@@ -3118,9 +3118,12 @@ function Get-ScriptUndo([string]$Path, [string]$File)
     catch { return $null }
     $body = New-Object System.Collections.Generic.List[string]
     # Omgekeerde volgorde: eerst bestanden, dan de mappen waar ze in stonden
+    # Komt een regel vaker voor (bijv. een functie die twee keer dezelfde sleutel aanmaakt), dan telt de eerste keer
+    # dat het script hem aanmaakt: die komt in de omgekeerde volgorde het laatst.
     $seen = @{}
-    for ($i = $res.Undo.Count - 1; $i -ge 0; $i--) { $u = $res.Undo[$i]; if (-not $seen.ContainsKey($u)) { $seen[$u] = 1; $body.Add($u) } }
-    foreach ($x in $res.Unknown) { $body.Add("rem VUL IN: niet automatisch terug te draaien, $x") }
+    for ($i = 0; $i -lt $res.Undo.Count; $i++) { $u = $res.Undo[$i]; if (-not $seen.ContainsKey($u)) { $seen[$u] = $i } }
+    for ($i = $res.Undo.Count - 1; $i -ge 0; $i--) { $u = $res.Undo[$i]; if ($seen[$u] -eq $i) { $body.Add($u) } }
+    foreach ($x in @($res.Unknown | Select-Object -Unique)) { $body.Add("rem VUL IN: niet automatisch terug te draaien, $x") }
     if (-not $body.Count) { $body.Add("rem Het script maakt niets blijvends aan: er hoeft niets terug.") }
     return ,(@(New-DerivedMarker $File $body) + @($body))
 }
