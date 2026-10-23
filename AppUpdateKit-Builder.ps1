@@ -2392,7 +2392,20 @@ function Update-InstallPreview
     {
         $ui.TxtInstallCmd.Text = New-InstallCmdFromComponents $ui.TxtAppName.Text (Get-ComponentList) $ui.TxtPreInstall.Text $ui.TxtPostInstall.Text
     }
-    Sync-UninstallCleanup   # verwijderstappen bijwerken met de onderdelen en kopieerstappen
+    # Verwijderstappen bijwerken met de onderdelen en kopieerstappen. Een fout hierin niet stil laten verdwijnen.
+    try { Sync-UninstallCleanup } catch { Write-BuilderError $_ }
+}
+
+function Confirm-AutoSteps
+{
+    # Onderdelen gewijzigd terwijl de installatiestappen met de hand geschreven zijn: dan verandert install-app.cmd niet mee
+    if ($ui.ChkAutoSteps.IsChecked) { return }
+    $q = "De installatiestappen worden nu met de hand geschreven ('Installatiestappen automatisch maken uit de onderdelen' staat uit), dus install-app.cmd verandert niet mee met de onderdelen.`n`nAutomatisch maken aanzetten? Je eigen tekst wordt dan vervangen door de stappen uit de onderdelen."
+    if ([System.Windows.MessageBox]::Show($q, 'Installatiestappen', 'YesNo', 'Question') -eq 'Yes')
+    {
+        $ui.ChkAutoSteps.IsChecked = $true
+        Update-InstallPreview
+    }
 }
 
 function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
@@ -3444,6 +3457,7 @@ $ui.BtnCompRemove.Add_Click({
     [void]$script:Components.Remove($c)
     if ($r -eq 'Yes') { Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $c.File) -Force -ErrorAction SilentlyContinue }
     Update-InstallPreview; Update-FileList
+    Confirm-AutoSteps
 })
 
 $ui.BtnCompUp.Add_Click({
@@ -3587,6 +3601,7 @@ $ui.BtnCompAdd.Add_Click({
         }
     }
     Update-InstallPreview; Update-FileList
+    if ($added) { Confirm-AutoSteps }
     if ($copied -and -not $ui.ChkAutoSteps.IsChecked)
     {
         Show-Info "De kopieerstappen staan in 'Extra stappen na de onderdelen'. Je schrijft de installatiestappen met de hand (automatisch maken staat uit): neem ze daar ook over."
