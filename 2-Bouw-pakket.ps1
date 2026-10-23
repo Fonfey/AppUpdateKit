@@ -132,10 +132,30 @@ $pointer  = Join-Path $kitVersionDir 'Pakketlocatie.txt'
 # Stond hier alleen een verwijzing naar een eigen map, en bouwen we nu in de kit? Verwijzing weghalen.
 if (-not $external -and (Test-Path $pointer) -and @(Get-ChildItem $kitVersionDir -Force).Count -eq 1) { Remove-Item $kitVersionDir -Recurse -Force }
 
+function Get-FreeArchivePath([string]$Path) {
+    # Bestaat deze archiefmap al (bijv. na een eerder mislukte build)? Dan _2, _3 ... erachter
+    $p = $Path; $n = 2
+    while (Test-Path -LiteralPath $p) { $p = "${Path}_$n"; $n++ }
+    return $p
+}
 function Move-Folder([string]$From, [string]$To) {
-    # Verplaatsen, ook naar een andere schijf (Move-Item kan dat niet met mappen)
-    try { Move-Item -Path $From -Destination $To -ErrorAction Stop }
-    catch { Copy-Item -Path $From -Destination $To -Recurse -Force; Remove-Item -Path $From -Recurse -Force }
+    # Verplaatsen naar het archief. Op dezelfde schijf is dat een hernoeming: lukt die niet, dan is de map in gebruik
+    # (meestal een Verkenner-venster, opdrachtprompt of programma dat een bestand in die map open heeft).
+    # Dan stoppen voordat er iets is weggehaald, in plaats van half te kopieren en half te verwijderen.
+    $sameDrive = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($From)) -eq [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($To))
+    try { Move-Item -LiteralPath $From -Destination $To -ErrorAction Stop; return }
+    catch {
+        if ($sameDrive) {
+            throw "De map $From is in gebruik en kan niet naar het archief.`nSluit Verkenner-vensters, opdrachtprompts en programma's die deze map (of een bestand erin, zoals install.intunewin) open hebben, en bouw opnieuw.`nEr is niets verwijderd. ($($_.Exception.Message))"
+        }
+    }
+    # Andere schijf: kopieren en daarna het origineel weghalen. Lukt weghalen niet, dan de kopie terugdraaien.
+    Copy-Item -LiteralPath $From -Destination $To -Recurse -Force -ErrorAction Stop
+    try { Remove-Item -LiteralPath $From -Recurse -Force -ErrorAction Stop }
+    catch {
+        Remove-Item -LiteralPath $To -Recurse -Force -ErrorAction SilentlyContinue
+        throw "De map $From is in gebruik en kan niet worden opgeruimd.`nSluit Verkenner-vensters, opdrachtprompts en programma's die deze map open hebben, en bouw opnieuw. ($($_.Exception.Message))"
+    }
 }
 if ($external) {
     $parent = Split-Path $root -Parent
@@ -146,7 +166,7 @@ if ($external) {
     }
     # Stond deze versie eerder in de kit zelf (geen verwijzing)? Die build gaat naar het archief.
     if ((Test-Path $kitVersionDir) -and -not (Test-Path $pointer)) {
-        $old = Join-Path (Join-Path (Join-Path $Output $cfg.AppId) '_archief') "$($cfg.Version)_$((Get-Item $kitVersionDir).LastWriteTime.ToString('yyyyMMdd-HHmmss'))"
+        $old = Get-FreeArchivePath (Join-Path (Join-Path (Join-Path $Output $cfg.AppId) '_archief') "$($cfg.Version)_$((Get-Item $kitVersionDir).LastWriteTime.ToString('yyyyMMdd-HHmmss'))")
         New-Item -Path (Split-Path $old -Parent) -ItemType Directory -Force | Out-Null
         Move-Folder $kitVersionDir $old
     }
@@ -158,10 +178,11 @@ if (Test-Path $root) {
     # Niets weggooien: de vorige build van deze versie gaat naar het archief
     $stampSource = if (Test-Path (Join-Path $root 'Bouwinfo.txt')) { Get-Item (Join-Path $root 'Bouwinfo.txt') } else { Get-Item $root }
     $archiveDir = Join-Path (Join-Path $Output $cfg.AppId) '_archief'
-    $archive = Join-Path $archiveDir "$($cfg.Version)_$($stampSource.LastWriteTime.ToString('yyyyMMdd-HHmmss'))"
+    $archive = Get-FreeArchivePath (Join-Path $archiveDir "$($cfg.Version)_$($stampSource.LastWriteTime.ToString('yyyyMMdd-HHmmss'))")
     New-Item -Path $archiveDir -ItemType Directory -Force | Out-Null
-    if (Test-Path (Join-Path $root 'Pakket')) { Remove-Item -Path (Join-Path $root 'Pakket') -Recurse -Force }   # tijdelijke map, niet bewaren
-    Move-Folder $root $archive
+    Move-Folder $root $archive   # eerst verplaatsen: is de map in gebruik, dan stopt de build voordat er iets weg is
+    # Pakket\ is een tijdelijke map: niet bewaren in het archief
+    if (Test-Path -LiteralPath (Join-Path $archive 'Pakket')) { Remove-Item -LiteralPath (Join-Path $archive 'Pakket') -Recurse -Force -ErrorAction SilentlyContinue }
     Write-Warning "Versie $($cfg.Version) was al gebouwd. Die build is bewaard in _archief\$(Split-Path $archive -Leaf)."
 }
 New-Item -Path $pkg, $intune, $bron -ItemType Directory -Force | Out-Null
