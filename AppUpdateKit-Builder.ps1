@@ -911,6 +911,13 @@ function Compare-AppData
     return $diff
 }
 
+function Get-InvalidMsiSwitch([string]$Arguments)
+{
+    # Opties die msiexec niet kent (bijv. /S of /VERYSILENT van een .exe-installer): msiexec stopt dan met 1639
+    $ok = '^/(i|x|p|a|j[um]?|f[a-z]*|l[a-z\*\+!]*|log|q[nbrf]?[\+\-!]*|quiet|passive|norestart|forcerestart|promptrestart|package|uninstall|update|help|\?|y|z)$'
+    return @(("$Arguments" -split '\s+') | Where-Object { $_ -like '/*' -and $_ -notmatch $ok })
+}
+
 function Test-InAppsFolder([string]$Path)
 {
     # Ligt dit pad in Apps\ van de kit (de app-mappen)? Daar mag het pakket niet komen.
@@ -950,6 +957,11 @@ function Test-AppData
         elseif (Test-InAppsFolder $of) { $e += "Pakket opslaan in ligt in de app-map ($of). Kies een map buiten Apps\, bijv. de versiemap naast de installer; anders kopieert elke build zichzelf in het pakket." }
     }
     if ($d.AutoInstallSteps -and -not @($d.Components | Where-Object { $_ }).Count) { $e += 'Voeg in tabblad 2 minstens één onderdeel toe (of zet automatisch maken uit).' }
+    foreach ($c in @($d.Components | Where-Object { $_ -and "$($_.Kind)" -in 'MSI', 'MSP' }))
+    {
+        $bad = Get-InvalidMsiSwitch "$($c.Args)"
+        if ($bad) { $e += "Parameters bij $($c.File): $($bad -join ' ') hoort niet bij msiexec (een .msi krijgt al /qn /norestart). Haal het weg in tabblad 2; anders mislukt de installatie met foutcode 1639." }
+    }
     if ($d.InstallWindow -and $d.InstallWindow -ne 'Altijd')
     {
         $blocks = @("$($d.WorkHours)" -split ',' | Where-Object { $_ })
@@ -2379,7 +2391,12 @@ function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
     if ([System.IO.Path]::GetFullPath($Source) -ine [System.IO.Path]::GetFullPath($dest)) { Set-Status "Kopieren van $name..."; Copy-Item -LiteralPath $Source -Destination $dest -Force }
     $info = Get-ComponentInfo $dest
     $existing = $script:Components | Where-Object { $_.File -eq $name } | Select-Object -First 1
-    if ($existing) { $existing.Kind = $info.Kind; $existing.ProductCode = $info.ProductCode }
+    if ($existing)
+    {
+        # Ander type (bijv. eerst .exe, nu .msi met dezelfde naam)? Dan horen de oude parameters er niet meer bij.
+        if ("$($existing.Kind)" -ne "$($info.Kind)") { $existing.Args = "$($info.Args)"; $existing.Codes = "$($info.Codes)" }
+        $existing.Kind = $info.Kind; $existing.ProductCode = $info.ProductCode
+    }
     else
     {
         if ($AsMain) { foreach ($c in $script:Components) { $c.Main = $false } }

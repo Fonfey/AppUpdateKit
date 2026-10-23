@@ -67,6 +67,13 @@ foreach ($f in 'install-app.cmd', 'uninstall-app.cmd') {
 $icon = if ($cfg.Icon) { $cfg.Icon } else { 'app.ico' }
 if (-not (Test-Path (Join-Path $source $icon))) { $warnings += "Logo '$icon' niet gevonden: de vensters tonen dan geen logo." }
 
+function Get-InvalidMsiSwitch([string]$Arguments)
+{
+    # Opties die msiexec niet kent (bijv. /S of /VERYSILENT van een .exe-installer): msiexec stopt dan met 1639
+    $ok = '^/(i|x|p|a|j[um]?|f[a-z]*|l[a-z\*\+!]*|log|q[nbrf]?[\+\-!]*|quiet|passive|norestart|forcerestart|promptrestart|package|uninstall|update|help|\?|y|z)$'
+    return @(("$Arguments" -split '\s+') | Where-Object { $_ -like '/*' -and $_ -notmatch $ok })
+}
+
 # Installers die in install-app.cmd genoemd worden, moeten in de map staan
 $installText = Get-Content -Path (Join-Path $source 'install-app.cmd') -Raw -ErrorAction SilentlyContinue
 if ($installText) {
@@ -83,6 +90,11 @@ if ($installText) {
         }
     }
     if ($active -notmatch 'APP_EXITCODE') { $warnings += 'install-app.cmd zet APP_EXITCODE niet; succes/fout wordt dan niet goed gemeld.' }
+    # msiexec-regels met opties die msiexec niet kent (bijv. /S van een .exe): dat geeft foutcode 1639
+    foreach ($line in ($active -split "`n" | Where-Object { $_ -match '^\s*msiexec(\.exe)?\s' })) {
+        $bad = Get-InvalidMsiSwitch ($line -replace '"[^"]*"', '')
+        if ($bad) { $problems += "install-app.cmd: '$($bad -join ' ')' hoort niet bij msiexec:`n      $($line.Trim())`n      Haal het weg (in de Builder: tabblad 2, kolom Parameters); anders mislukt de installatie met foutcode 1639." }
+    }
 }
 
 $warnings | ForEach-Object { Write-Warning $_ }
