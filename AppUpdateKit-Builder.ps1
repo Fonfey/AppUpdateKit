@@ -2390,6 +2390,45 @@ function Update-FileList
     }
 }
 
+function Sync-UninstallCleanup
+{
+    # Verwijderstappen gelijk houden met de kopieerstappen: elk bestand dat de installatie ergens neerzet,
+    # ruimt het verwijderen weer op (en de map, als die daarna leeg is). Eigen regels blijven staan.
+    $text = "$($ui.TxtUninstallCmd.Text)"
+    if (-not $text.Trim()) { return }
+    # Oude opruimblokken weghalen
+    $lines = @($text -split "`r?`n")
+    $keep = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $lines.Count; $i++)
+    {
+        if ($lines[$i] -like 'rem Bestand: * opruimen uit *')
+        {
+            while ($i + 1 -lt $lines.Count -and ($lines[$i + 1] -like 'if exist "*" del /F /Q "*"' -or $lines[$i + 1] -like 'rd "*" 2>nul')) { $i++ }
+            continue
+        }
+        $keep.Add($lines[$i])
+    }
+    # Nieuwe blokken uit de kopieerstappen
+    $block = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches("$($ui.TxtPostInstall.Text)", 'copy /Y "([^"]+)" "([^"]+)"', 'IgnoreCase'))
+    {
+        $file = $m.Groups[1].Value; $dir = $m.Groups[2].Value.TrimEnd('\')
+        $block.Add("rem Bestand: $file opruimen uit $dir")
+        $block.Add("if exist `"$dir\$file`" del /F /Q `"$dir\$file`"")
+        $block.Add("rd `"$dir`" 2>nul")
+    }
+    # Vóór de laatste 'exit /b' zetten (de exitcode van het verwijderen blijft zo gelden), anders achteraan
+    $exitAt = -1
+    for ($i = $keep.Count - 1; $i -ge 0; $i--) { if ($keep[$i] -match '^\s*exit\s+/b') { $exitAt = $i; break } }
+    if ($block.Count)
+    {
+        if ($exitAt -ge 0) { $keep.InsertRange($exitAt, [string[]](@($block) + '')) }
+        else { $keep.Add(''); $keep.AddRange([string[]]@($block)) }
+    }
+    $new = ($keep -join "`r`n") -replace "(`r`n){3,}", "`r`n`r`n"
+    if ($new -ne $text) { $ui.TxtUninstallCmd.Text = $new }
+}
+
 function Copy-ToAppFolder([string]$Source)
 {
     # Kopieert een bestand naar de app-map; staat het daar al (zelfde bestand), dan niets doen
@@ -2428,6 +2467,7 @@ function Add-CopyStep([string]$Name, [string]$Target)
     $block = "rem Bestand: $Name kopieren naar $t`r`nif not exist `"$t\`" md `"$t`"`r`ncopy /Y `"$Name`" `"$t\`" >nul"
     $cur = Remove-CopyStep $Name $ui.TxtPostInstall.Text
     $ui.TxtPostInstall.Text = if ($cur) { "$cur`r`n$block" } else { $block }
+    Sync-UninstallCleanup
 }
 
 $FileActionXaml = @'
@@ -3129,6 +3169,7 @@ $ui.BtnInstaller.Add_Click({
     if (-not $ui.TxtUninstallCmd.Text.Trim() -or $ui.TxtUninstallCmd.Text -match 'MijnApp|VUL IN')
     {
         $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
+        Sync-UninstallCleanup
     }
     Update-FileList
 
@@ -3155,6 +3196,7 @@ $ui.BtnGenerate.Add_Click({
     if ($ui.TxtUninstallCmd.Text.Trim() -and [System.Windows.MessageBox]::Show('De huidige verwijderstappen vervangen?', 'Opnieuw maken', 'YesNo', 'Question') -ne 'Yes') { return }
     $info = @{ Kind = $main.Kind; ProductCode = $main.ProductCode }
     $ui.TxtUninstallCmd.Text = New-UninstallCmdText $ui.TxtAppName.Text $info $ui.TxtDetectName.Text
+    Sync-UninstallCleanup
 })
 
 
@@ -3209,7 +3251,7 @@ $ui.InfoTimes.Add_MouseLeftButtonUp({
 })
 $ui.ChkIdle.Add_Click({ Update-WindowHint })
 $ui.TxtPostInstall.Add_TextChanged({ Update-InstallPreview })
-$ui.TxtPostInstall.Add_LostFocus({ Update-FileList })
+$ui.TxtPostInstall.Add_LostFocus({ Sync-UninstallCleanup; Update-FileList })
 $ui.TxtPreInstall.Add_LostFocus({ Update-FileList })
 $ui.ChkAutoSteps.Add_Click({
     if (-not $ui.ChkAutoSteps.IsChecked)
@@ -3308,6 +3350,7 @@ $ui.BtnRemoveFile.Add_Click({
     {
         Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $name) -Force
         $ui.TxtPostInstall.Text = Remove-CopyStep $name $ui.TxtPostInstall.Text
+        Sync-UninstallCleanup
         foreach ($c in @($script:Components | Where-Object { $_.File -eq $name })) { [void]$script:Components.Remove($c) }
         $ui.DgComponents.Items.Refresh()
         if ("$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)" -match [regex]::Escape($name)) { Show-Info "$name wordt nog genoemd in de extra stappen (tabblad 2). Haal die regels weg, anders mislukt de installatie." }
