@@ -2352,7 +2352,7 @@ function Add-ComponentFile([string]$Source, [bool]$AsMain = $false)
     $dir = Get-AppFolder
     $name = [System.IO.Path]::GetFileName($Source)
     $dest = Join-Path $dir $name
-    if ($Source -ne $dest) { Set-Status "Kopieren van $name..."; Copy-Item -LiteralPath $Source -Destination $dest -Force }
+    if ([System.IO.Path]::GetFullPath($Source) -ine [System.IO.Path]::GetFullPath($dest)) { Set-Status "Kopieren van $name..."; Copy-Item -LiteralPath $Source -Destination $dest -Force }
     $info = Get-ComponentInfo $dest
     $existing = $script:Components | Where-Object { $_.File -eq $name } | Select-Object -First 1
     if ($existing) { $existing.Kind = $info.Kind; $existing.ProductCode = $info.ProductCode }
@@ -2388,6 +2388,15 @@ function Update-FileList
         $size = if ($_.Length -ge 1MB) { '{0:N0} MB' -f ($_.Length / 1MB) } else { '{0:N0} kB' -f [math]::Max(1, $_.Length / 1KB) }
         [void]$ui.LstFiles.Items.Add("$($_.Name)   ($size)   ->  $(Get-FileUse $_.Name)")
     }
+}
+
+function Copy-ToAppFolder([string]$Source)
+{
+    # Kopieert een bestand naar de app-map; staat het daar al (zelfde bestand), dan niets doen
+    $dir = Get-AppFolder
+    $dest = Join-Path $dir ([System.IO.Path]::GetFileName($Source))
+    if ([System.IO.Path]::GetFullPath($Source) -ieq [System.IO.Path]::GetFullPath($dest)) { return }
+    Copy-Item -LiteralPath $Source -Destination $dest -Force
 }
 
 function Test-InstallerFile([string]$Name)
@@ -2458,7 +2467,7 @@ function Show-FileActionDialog([string]$Name, [int]$Others)
     $w.Owner = $Window; $w.Icon = $Window.Icon
     $f = @{}
     foreach ($n in 'TxtTitle', 'OptComp', 'OptCopy', 'OptKeep', 'TxtTarget', 'ChkAll', 'BtnOk', 'BtnCancel') { $f[$n] = $w.FindName($n) }
-    $f.TxtTitle.Text = "Wat moet de installatie doen met $Name?"
+    $f.TxtTitle.Text = "Wat moet de installatie doen met $($Name)?"
     $isInstaller = Test-InstallerFile $Name
     $f.OptComp.IsEnabled = $isInstaller
     if (-not $isInstaller) { $f.OptComp.Content = 'Installeren als onderdeel (alleen voor .exe, .msi, .msp, .ps1, .cmd, .bat en .reg)' }
@@ -3279,8 +3288,8 @@ $ui.BtnCompAdd.Add_Click({
                 if ($main) { $mi = $script:Components.IndexOf($main); if ($mi -lt $script:Components.Count - 1) { $script:Components.Move($mi, $script:Components.Count - 1) } }
                 $added += $name
             }
-            'Kopieren' { Copy-Item -LiteralPath $fn -Destination (Get-AppFolder) -Force; Add-CopyStep $name $choice.Target; $copied += $name }
-            default    { Copy-Item -LiteralPath $fn -Destination (Get-AppFolder) -Force }
+            'Kopieren' { Copy-ToAppFolder $fn; Add-CopyStep $name $choice.Target; $copied += $name }
+            default    { Copy-ToAppFolder $fn }
         }
     }
     Update-InstallPreview; Update-FileList
