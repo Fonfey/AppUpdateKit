@@ -1179,6 +1179,8 @@ namespace AppKit {
         public string Args        { get; set; }
         public string Codes       { get; set; }
         public string ProductCode { get; set; }
+        public string Action      { get; set; }   // alleen voor de tabel: Installeren (1), Kopiëren, Logo, ...
+        public bool   IsFile      { get; set; }   // true = geen onderdeel, maar een ander bestand in het pakket
     }
 }
 "@
@@ -1544,8 +1546,16 @@ $ThemeXaml = @'
     </Style>
     <Style TargetType="DataGridCell">
       <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="6,0"/>
       <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="DataGridCell">
+            <Border Background="{TemplateBinding Background}" Padding="8,0" SnapsToDevicePixels="True">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
       <Style.Triggers>
         <Trigger Property="IsSelected" Value="True">
           <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
@@ -1862,17 +1872,39 @@ $xamlText = @'
           <StackPanel Margin="12">
             <Border Style="{StaticResource Card}">
               <StackPanel>
-                <Label Content="Onderdelen (worden in deze volgorde geïnstalleerd)"/>
-                <TextBlock Style="{StaticResource Hint}" Text="Bijv. eerst een runtime, dan de app zelf. Per onderdeel eigen parameters (dubbelklik om te wijzigen) en de exitcodes die als geslaagd tellen. Mislukt een onderdeel, dan stopt de installatie en krijgt de gebruiker de melding 'niet gelukt'. Het hoofdonderdeel is de app zelf (gebruikt voor verwijderen)."/>
+                <Label Content="Onderdelen en bestanden"/>
+                <TextBlock Style="{StaticResource Hint}" Text="Alles wat in het pakket gaat. Onderdelen worden in deze volgorde geïnstalleerd; per onderdeel eigen parameters en de exitcodes die als geslaagd tellen (dubbelklik om te wijzigen). Mislukt een onderdeel, dan stopt de installatie. Het hoofdonderdeel is de app zelf (gebruikt voor verwijderen). Bij een bestand dat gekopieerd wordt, pas je de doelmap aan in dezelfde kolom."/>
                 <DataGrid Name="DgComponents" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                           CanUserSortColumns="False" CanUserReorderColumns="False" HeadersVisibility="Column" SelectionMode="Single"
-                          GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E1E4E8" Height="170" Margin="0,0,0,8"
-                          Background="White" BorderBrush="#D5DAE1" RowHeight="30">
+                          GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E6E9EE" Height="230" Margin="0,4,0,10"
+                          Background="White" BorderBrush="#D5DAE1" RowHeight="34">
+                  <DataGrid.RowStyle>
+                    <Style TargetType="DataGridRow">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFile}" Value="True"><Setter Property="Foreground" Value="#4B5563"/></DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </DataGrid.RowStyle>
                   <DataGrid.Columns>
-                    <DataGridCheckBoxColumn Header="Hoofd" Width="50" Binding="{Binding Main, UpdateSourceTrigger=PropertyChanged}"/>
+                    <DataGridCheckBoxColumn Header="Hoofd" Width="62" Binding="{Binding Main, UpdateSourceTrigger=PropertyChanged}">
+                      <DataGridCheckBoxColumn.ElementStyle>
+                        <Style TargetType="CheckBox" BasedOn="{x:Static DataGridCheckBoxColumn.DefaultElementStyle}">
+                          <Setter Property="HorizontalAlignment" Value="Left"/>
+                          <Setter Property="Margin" Value="2,0,0,0"/>
+                          <Style.Triggers><DataTrigger Binding="{Binding IsFile}" Value="True"><Setter Property="Visibility" Value="Hidden"/></DataTrigger></Style.Triggers>
+                        </Style>
+                      </DataGridCheckBoxColumn.ElementStyle>
+                      <DataGridCheckBoxColumn.EditingElementStyle>
+                        <Style TargetType="CheckBox" BasedOn="{x:Static DataGridCheckBoxColumn.DefaultEditingElementStyle}">
+                          <Setter Property="HorizontalAlignment" Value="Left"/>
+                          <Setter Property="Margin" Value="2,0,0,0"/>
+                        </Style>
+                      </DataGridCheckBoxColumn.EditingElementStyle>
+                    </DataGridCheckBoxColumn>
                     <DataGridTextColumn Header="Bestand" Width="2*" IsReadOnly="True" Binding="{Binding File}"/>
-                    <DataGridTextColumn Header="Type" Width="60" IsReadOnly="True" Binding="{Binding Kind}"/>
-                    <DataGridTextColumn Header="Parameters" Width="2*" FontFamily="Consolas" Binding="{Binding Args, UpdateSourceTrigger=PropertyChanged}"/>
+                    <DataGridTextColumn Header="Type" Width="58" IsReadOnly="True" Binding="{Binding Kind}"/>
+                    <DataGridTextColumn Header="Wat" Width="118" IsReadOnly="True" Binding="{Binding Action}"/>
+                    <DataGridTextColumn Header="Parameters / doelmap" Width="2*" FontFamily="Consolas" Binding="{Binding Args, UpdateSourceTrigger=PropertyChanged}"/>
                     <DataGridTextColumn Header="Geslaagd bij exitcode" Width="150" FontFamily="Consolas" Binding="{Binding Codes, UpdateSourceTrigger=PropertyChanged}"/>
                   </DataGrid.Columns>
                 </DataGrid>
@@ -1881,6 +1913,7 @@ $xamlText = @'
                   <Button Name="BtnCompRemove" Content="Verwijderen" Margin="0,0,8,6"/>
                   <Button Name="BtnCompUp" Content="Omhoog" Margin="0,0,8,6"/>
                   <Button Name="BtnCompDown" Content="Omlaag" Margin="0,0,8,6"/>
+                  <Button Name="BtnOpenAppFolder" Content="Map openen" Margin="0,0,8,6"/>
                 </WrapPanel>
                 <TextBlock Name="TxtCompInfo" Style="{StaticResource Hint}" Margin="0,2,0,0" Text="Toevoegen: kies per bestand of het geïnstalleerd wordt (onderdeel), naar een map op de laptop gekopieerd wordt, of alleen meegaat. Installeren kan bij .exe, .msi, .msp, .ps1, .cmd/.bat en .reg; stille parameters worden voorgesteld."/>
               </StackPanel>
@@ -1921,17 +1954,6 @@ $xamlText = @'
                 <TextBlock Style="{StaticResource Hint}" Text="Draait als SYSTEM vanuit de pakketmap. Lukt verwijderen via de setup.exe niet, gebruik dan: powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;Remove-App.ps1&quot; -Name &quot;naam in Apps en onderdelen&quot;"/>
                 <TextBox Name="TxtUninstallCmd" AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="12"
                          Height="210" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
-              </StackPanel>
-            </Border>
-            <Border Style="{StaticResource Card}">
-              <StackPanel>
-                <Label Content="In het pakket"/>
-                <TextBlock Style="{StaticResource Hint}" Text="Overzicht van alles wat meegaat in het .intunewin-pakket, met wat de installatie ermee doet. Toevoegen doe je bovenaan bij Onderdelen."/>
-                <ListBox Name="LstFiles" Height="130" Margin="0,0,0,8"/>
-                <StackPanel Orientation="Horizontal">
-                  <Button Name="BtnRemoveFile" Content="Geselecteerde verwijderen"/>
-                  <Button Name="BtnOpenAppFolder" Content="Map openen"/>
-                </StackPanel>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -2214,7 +2236,9 @@ $xaml.SelectNodes('//*[@Name]') | ForEach-Object { $ui[$_.Name] = $Window.FindNa
 $script:CurrentApp = $null     # AppId van de geladen app
 $script:Info = @{ Kind = 'EXE'; ProductCode = '' }
 $script:Components = New-Object 'System.Collections.ObjectModel.ObservableCollection[AppKit.Component]'
-$ui.DgComponents.ItemsSource = $script:Components
+# De tabel toont de onderdelen én de andere bestanden in de app-map (Update-FileList)
+$script:Rows = New-Object 'System.Collections.ObjectModel.ObservableCollection[AppKit.Component]'
+$ui.DgComponents.ItemsSource = $script:Rows
 $script:TextBoxes = @{}
 $script:TextHints = @{}
 
@@ -2380,14 +2404,28 @@ function Get-FileUse([string]$Name)
 
 function Update-FileList
 {
-    $ui.LstFiles.Items.Clear()
+    # Eén tabel: eerst de onderdelen (in installatievolgorde), dan de andere bestanden uit de app-map
+    try { [void]$ui.DgComponents.CommitEdit('Row', $true) } catch { }
+    $selName = if ($ui.DgComponents.SelectedItem) { $ui.DgComponents.SelectedItem.File } else { $null }
+    $script:Rows.Clear()
+    $n = 0
+    foreach ($c in $script:Components) { $n++; $c.IsFile = $false; $c.Action = "Installeren ($n)"; $script:Rows.Add($c) }
     $dir = Get-AppFolder
-    if (-not $dir) { return }
-    $skip = @('app.psd1', 'install-app.cmd', 'uninstall-app.cmd')
-    Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -notin $skip } | Sort-Object Name | ForEach-Object {
-        $size = if ($_.Length -ge 1MB) { '{0:N0} MB' -f ($_.Length / 1MB) } else { '{0:N0} kB' -f [math]::Max(1, $_.Length / 1KB) }
-        [void]$ui.LstFiles.Items.Add("$($_.Name)   ($size)   ->  $(Get-FileUse $_.Name)")
+    if ($dir -and (Test-Path -LiteralPath $dir))
+    {
+        $skip = @('app.psd1', 'install-app.cmd', 'uninstall-app.cmd') + @($script:Components | ForEach-Object { $_.File })
+        Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -notin $skip } | Sort-Object Name | ForEach-Object {
+            $use = Get-FileUse $_.Name
+            $r = New-Object AppKit.Component
+            $r.IsFile = $true; $r.File = $_.Name; $r.Kind = $_.Extension.TrimStart('.').ToUpper(); $r.Codes = ''; $r.Args = ''
+            if ($use -like 'kopi*naar *')                { $r.Action = 'Kopiëren'; $r.Args = ($use -replace '^\S+ naar ', '') }
+            elseif ($use -eq 'gebruikt in extra stappen') { $r.Action = 'Extra stap' }
+            elseif ($use -eq 'logo')                      { $r.Action = 'Logo' }
+            else                                          { $r.Action = 'Alleen meenemen' }
+            $script:Rows.Add($r)
+        }
     }
+    if ($selName) { $ui.DgComponents.SelectedItem = $script:Rows | Where-Object { $_.File -eq $selName } | Select-Object -First 1 }
 }
 
 function Sync-UninstallCleanup
@@ -3202,7 +3240,8 @@ $ui.BtnGenerate.Add_Click({
 
 $ui.BtnCompRemove.Add_Click({
     $c = $ui.DgComponents.SelectedItem
-    if (-not $c) { Show-Error 'Selecteer eerst een onderdeel.'; return }
+    if (-not $c) { Show-Error 'Selecteer eerst een regel in de tabel.'; return }
+    if ($c.IsFile) { Remove-PackageFile $c.File; return }
     $r = [System.Windows.MessageBox]::Show("Onderdeel $($c.File) verwijderen.`n`nOok het bestand uit de app-map verwijderen?", 'Onderdeel verwijderen', 'YesNoCancel', 'Question')
     if ($r -eq 'Cancel') { return }
     [void]$script:Components.Remove($c)
@@ -3212,18 +3251,34 @@ $ui.BtnCompRemove.Add_Click({
 
 $ui.BtnCompUp.Add_Click({
     $c = $ui.DgComponents.SelectedItem; if (-not $c) { return }
+    if ($c.IsFile) { Set-Status 'Alleen onderdelen hebben een volgorde.'; return }
     $i = $script:Components.IndexOf($c)
-    if ($i -gt 0) { $script:Components.Move($i, $i - 1); Update-InstallPreview }
+    if ($i -gt 0) { $script:Components.Move($i, $i - 1); Update-FileList; Update-InstallPreview }
 })
 $ui.BtnCompDown.Add_Click({
     $c = $ui.DgComponents.SelectedItem; if (-not $c) { return }
+    if ($c.IsFile) { Set-Status 'Alleen onderdelen hebben een volgorde.'; return }
     $i = $script:Components.IndexOf($c)
-    if ($i -lt $script:Components.Count - 1) { $script:Components.Move($i, $i + 1); Update-InstallPreview }
+    if ($i -lt $script:Components.Count - 1) { $script:Components.Move($i, $i + 1); Update-FileList; Update-InstallPreview }
+})
+
+# Bestanden (geen onderdeel): alleen de doelmap van een kopieerbestand is te wijzigen
+$ui.DgComponents.Add_BeginningEdit({
+    $r = $_.Row.Item
+    if ($r -and $r.IsFile -and -not ($r.Action -eq 'Kopiëren' -and "$($_.Column.Header)" -like 'Parameters*')) { $_.Cancel = $true }
 })
 
 # Na het wijzigen van een cel (parameters, exitcodes, hoofd) het voorbeeld bijwerken
 $ui.DgComponents.Add_CellEditEnding({
+    $r = $_.Row.Item
+    $script:PendingCopyEdit = if ($r -and $r.IsFile -and $r.Action -eq 'Kopiëren' -and $_.EditingElement -is [System.Windows.Controls.TextBox]) { @{ File = $r.File; Target = $_.EditingElement.Text.Trim() } } else { $null }
     $null = $Window.Dispatcher.BeginInvoke([action]{
+        if ($script:PendingCopyEdit -and $script:PendingCopyEdit.Target)
+        {
+            Add-CopyStep $script:PendingCopyEdit.File $script:PendingCopyEdit.Target
+            $script:PendingCopyEdit = $null
+            Update-FileList
+        }
         # Maar één hoofdonderdeel tegelijk
         $sel = $ui.DgComponents.SelectedItem
         if ($sel -and $sel.Main) { foreach ($c in $script:Components) { if ($c -ne $sel) { $c.Main = $false } } ; $ui.DgComponents.Items.Refresh() }
@@ -3342,21 +3397,16 @@ $ui.BtnCompAdd.Add_Click({
     elseif ($added -or $copied) { Set-Status "Toegevoegd: $((@($added) + @($copied)) -join ', '). Zie tabblad 2 voor de stappen." }
 })
 
-$ui.BtnRemoveFile.Add_Click({
-    $sel = [string]$ui.LstFiles.SelectedItem
-    if (-not $sel) { return }
-    $name = ($sel -split '   \(')[0]
-    if ([System.Windows.MessageBox]::Show("$name verwijderen uit de app-map?", 'Verwijderen', 'YesNo', 'Question') -eq 'Yes')
-    {
-        Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $name) -Force
-        $ui.TxtPostInstall.Text = Remove-CopyStep $name $ui.TxtPostInstall.Text
-        Sync-UninstallCleanup
-        foreach ($c in @($script:Components | Where-Object { $_.File -eq $name })) { [void]$script:Components.Remove($c) }
-        $ui.DgComponents.Items.Refresh()
-        if ("$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)" -match [regex]::Escape($name)) { Show-Info "$name wordt nog genoemd in de extra stappen (tabblad 2). Haal die regels weg, anders mislukt de installatie." }
-        Update-InstallPreview; Update-FileList; Update-IconPreview
-    }
-})
+function Remove-PackageFile([string]$Name)
+{
+    # Een bestand (geen onderdeel) uit het pakket halen, met de kopieer- en opruimstap
+    if ([System.Windows.MessageBox]::Show("$Name verwijderen uit de app-map?", 'Verwijderen', 'YesNo', 'Question') -ne 'Yes') { return }
+    Remove-Item -LiteralPath (Join-Path (Get-AppFolder) $Name) -Force
+    $ui.TxtPostInstall.Text = Remove-CopyStep $Name $ui.TxtPostInstall.Text
+    Sync-UninstallCleanup
+    if ("$($ui.TxtPreInstall.Text)`n$($ui.TxtPostInstall.Text)" -match [regex]::Escape($Name)) { Show-Info "$Name wordt nog genoemd in de extra stappen (tabblad 2). Haal die regels weg, anders mislukt de installatie." }
+    Update-InstallPreview; Update-FileList; Update-IconPreview
+}
 
 $ui.BtnOpenAppFolder.Add_Click({ if (Get-AppFolder) { Start-Process explorer.exe (Get-AppFolder) } })
 # Moderne Windows-mapkiezer (zoals in Verkenner: adresbalk om een pad te typen of plakken, snelle toegang links).
