@@ -2583,6 +2583,28 @@ function Resolve-PsValue($Ast, [hashtable]$Vars)
             return $null
         }
         'ParenExpressionAst' { return Resolve-PsValue $Ast.Pipeline $Vars }
+        'ConvertExpressionAst' { return Resolve-PsValue $Ast.Child $Vars }   # [pscustomobject]@{...}, [string]$x
+        'HashtableAst'
+        {
+            # @{ Naam = 'Horizon'; Map = "$env:PUBLIC\Desktop" }: velden die te bepalen zijn
+            $h = @{}
+            foreach ($kv in $Ast.KeyValuePairs)
+            {
+                $k = Resolve-PsValue $kv.Item1 $Vars; $v = Resolve-PsValue $kv.Item2 $Vars
+                if ($k -and $null -ne $v) { $h["$($k[0])".ToLower()] = $v[0] }
+            }
+            return ,@($h)
+        }
+        'MemberExpressionAst'
+        {
+            # $item.Naam bij een lijst met @{...}
+            if ($Ast.Static) { return $null }
+            $obj = Resolve-PsValue $Ast.Expression $Vars; $m = Resolve-PsValue $Ast.Member $Vars
+            if ($null -eq $obj -or -not $m) { return $null }
+            $out = @()
+            foreach ($o in $obj) { if ($o -is [hashtable] -and $o.ContainsKey("$($m[0])".ToLower())) { $out += $o["$($m[0])".ToLower()] } else { return $null } }
+            return ,$out
+        }
         'SubExpressionAst'
         {
             $st = @($Ast.SubExpression.Statements)
@@ -2818,14 +2840,27 @@ function Get-PsScriptUndo([string]$Path)
     $undo = New-Object System.Collections.ArrayList; $unknown = New-Object System.Collections.ArrayList
     $tokens = $null; $errs = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errs)
-    $appDir = Split-Path $Path -Parent
-    $vars = @{}
+    # Eigen functies in het script (bijv. function New-Shortcut($Path, $Target) { ... }): die worden gelezen
+    # op de plek waar ze worden aangeroepen, met de waarden die daar worden meegegeven.
+    $funcs = @{}
+    foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) { $funcs[$f.Name.ToLower()] = $f }
+    Invoke-PsUndoScan $ast @{} $undo $unknown $funcs (Split-Path $Path -Parent) 0
+    return @{ Undo = $undo; Unknown = $unknown }
+}
+
+function Invoke-PsUndoScan($Root, [hashtable]$Vars, $Undo, $Unknown, [hashtable]$Funcs, [string]$AppDir, [int]$Depth)
+{
+    # ($Vars/$Undo/$Unknown/$AppDir zijn hieronder $vars/$undo/$unknown/$appDir: PowerShell kijkt niet naar hoofdletters)
     $harmless = '^(?i)(Get|Test|Write|Out|Join|Split|Select|Where|ForEach|Sort|Measure|Wait|Read|Format|ConvertTo|ConvertFrom|Resolve|Start-Sleep|Start-Transcript|Stop-Transcript|Stop|Remove|Unregister|Clear|Import-Module|New-Object|Add-Type|Invoke-WebRequest|Invoke-RestMethod|Compare|Group|Tee|Trace|Show|Exit|Return|Throw|Push|Pop|Set-Location|Set-Variable|New-Variable|Set-StrictMode|Set-ExecutionPolicy|Get-Date|Start-Process)'
     $nodes = @($ast.FindAll({ param($n)
         $n -is [System.Management.Automation.Language.AssignmentStatementAst] -or
         $n -is [System.Management.Automation.Language.CommandAst] -or
         $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
-        $n -is [System.Management.Automation.Language.ForEachStatementAst] }, $true) | Sort-Object { $_.Extent.StartOffset })
+        $n -is [System.Management.Automation.Language.ForEachStatementAst] }, $true) | Where-Object {
+            # Niet in functies (die lezen we bij de aanroep) en niet in foreach-lussen (die lezen we per waarde)
+            $p = $_.Parent; $inFunc = $false
+            while ($p -and $p -ne $Root) { if ($p -is [System.Management.Automation.Language.FunctionDefinitionAst] -or $p -is [System.Management.Automation.Language.ForEachStatementAst]) { $inFunc = $true; break }; $p = $p.Parent }
+            -not $inFunc } | Sort-Object { $_.Extent.StartOffset })
     $where = { param($n) "regel $($n.Extent.StartLineNumber): $(($n.Extent.Text -split "`r?`n")[0].Trim())" }
     foreach ($n in $nodes)
     {
@@ -2848,9 +2883,17 @@ function Get-PsScriptUndo([string]$Path)
         }
         if ($T -eq 'ForEachStatementAst')
         {
+            # De lus per waarde lezen, zodat bij elkaar horende velden (bijv. $i.Map en $i.Naam) bij elkaar blijven
+            if ($Depth -ge 5) { continue }
             $r = Resolve-PsValue $n.Condition $vars
             $name = $n.Variable.VariablePath.UserPath.ToLower()
-            if ($null -ne $r) { $vars[$name] = @($r) } else { $vars.Remove($name) }
+            $values = if ($null -ne $r -and @($r).Count -le 50) { @($r) } else { @($null) }
+            foreach ($v in $values)
+            {
+                $lv = @{}; foreach ($k in $vars.Keys) { $lv[$k] = $vars[$k] }
+                if ($null -ne $v) { $lv[$name] = @(,$v) } else { $lv.Remove($name) }
+                Invoke-PsUndoScan $n.Body $lv $undo $unknown $Funcs $appDir ($Depth + 1)
+            }
             continue
         }
         if ($T -eq 'InvokeMemberExpressionAst')
@@ -2891,6 +2934,27 @@ function Get-PsScriptUndo([string]$Path)
             continue
         }
         $a = Get-PsCommandArgs $n
+        if ($Funcs.ContainsKey($name.ToLower()))
+        {
+            # Eigen functie: parameters koppelen aan de meegegeven waarden en de functie lezen
+            if ($Depth -ge 5) { continue }
+            $f = $Funcs[$name.ToLower()]
+            $params = @(if ($f.Body.ParamBlock) { $f.Body.ParamBlock.Parameters } elseif ($f.Parameters) { $f.Parameters })
+            $fv = @{}; foreach ($k in $vars.Keys) { $fv[$k] = $vars[$k] }
+            $posIdx = 0
+            foreach ($prm in $params)
+            {
+                $pn = $prm.Name.VariablePath.UserPath.ToLower()
+                $valAst = $null
+                foreach ($k in $a.Named.Keys) { if ($pn -eq $k -or $pn.StartsWith($k)) { $valAst = $a.Named[$k]; break } }
+                if ($null -eq $valAst -and $posIdx -lt $a.Positional.Count) { $valAst = $a.Positional[$posIdx]; $posIdx++ }
+                if ($null -eq $valAst) { $valAst = $prm.DefaultValue }
+                $r = if ($valAst -is [System.Management.Automation.Language.Ast]) { Resolve-PsValue $valAst $vars } else { $null }
+                if ($null -ne $r) { $fv[$pn] = @($r) } else { $fv.Remove($pn) }
+            }
+            Invoke-PsUndoScan $f.Body $fv $undo $unknown $Funcs $appDir ($Depth + 1)
+            continue
+        }
         $resolve1 = { param($ast) if ($null -eq $ast) { return $null }; $r = Resolve-PsValue $ast $vars; if ($null -eq $r) { return $null }; return ,@($r | ForEach-Object { ConvertTo-CmdPath $_ }) }
         switch -Regex ($name)
         {
@@ -3012,7 +3076,6 @@ function Get-PsScriptUndo([string]$Path)
             }
         }
     }
-    return @{ Undo = $undo; Unknown = $unknown }
 }
 
 function Get-CmdScriptUndo([string]$Path)
