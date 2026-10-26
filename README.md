@@ -6,9 +6,8 @@
 >
 > 📖 Walkthrough with screenshots (in Dutch): [AppUpdateKit: app-updates via Intune met een nette popup](https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/)
 
-<p>
-  <img src="docs/images/1-update-beschikbaar.webp" alt="Update available popup with Later and Update now" width="49%">
-  <img src="docs/images/2-laatste-waarschuwing.webp" alt="Final warning with countdown after the last postpone" width="49%">
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Demo: consent popup with Later, final warning with countdown, installing notification and result" width="800">
 </p>
 
 ## Sound familiar?
