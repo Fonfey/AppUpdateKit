@@ -2,6 +2,10 @@
 
 > 📖 Uitleg met screenshots op mijn blog: [AppUpdateKit: app-updates via Intune met een nette popup](https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/).
 
+<p align="center">
+  <img src="docs/images/demo-nl.gif" alt="Demo: popup met Later, laatste waarschuwing met aftelklok, melding tijdens de installatie en het resultaat" width="800">
+</p>
+
 Elke app krijgt dezelfde vensters:
 - **"Update beschikbaar"** rechtsonder, met het logo van de app en de knoppen *Later* / *Nu bijwerken*.
 - **Na de laatste keer uitstellen**: een waarschuwing "De update start over 5 minuten", met aftelklok en alleen de knop *Nu installeren*.
