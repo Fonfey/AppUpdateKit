@@ -1,0 +1,12 @@
+# Lokale bestanden van de Builder
+Builder-fouten.log
+*.lnk
+IntuneWinAppUtil.exe
+# Apps en gebouwde pakketten blijven lokaal
+Apps/*
+!Apps/LEESMIJ.txt
+Output/*
+!Output/LEESMIJ.txt
+# Eigen instellingen van deze kit (de standaardversie staat in *.standaard.psd1)
+_Kit/Instellingen.psd1
+_Kit/Standaardteksten.psd1

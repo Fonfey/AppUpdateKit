@@ -1,0 +1,16 @@
+# Windows-scripts houden CRLF-regeleinden (cmd.exe heeft dat nodig)
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.psd1  text eol=crlf
+*.md    text
+*.exe       binary
+*.msi       binary
+*.ico       binary
+*.png       binary
+*.intunewin binary
+
+# Alleen voor GitHub: niet meenemen in "Download ZIP"
+.gitattributes export-ignore
+.gitignore     export-ignore
+*.txt   text eol=crlf

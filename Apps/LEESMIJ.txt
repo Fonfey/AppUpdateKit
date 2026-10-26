@@ -1,0 +1,2 @@
+Hier komen je apps: per app een map met app.psd1, het logo, de installers en de installatiestappen.
+Maak een nieuwe app met "+ Nieuwe app" in de Builder, of met .\1-Nieuwe-app.ps1.

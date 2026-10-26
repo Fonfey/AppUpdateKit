@@ -1,0 +1,2 @@
+Hier zet de Builder per app en versie een verwijzing naar het gebouwde pakket (Pakketlocatie.txt),
+en eerdere builds van dezelfde versie in _archief. Bouw je zonder pakketmap, dan komt het pakket zelf hier.
