@@ -2,7 +2,7 @@
 
 **Intune Win32 app updates that ask the user first.** You get a consent popup, a postpone option, a countdown, progress and result notifications, and a restart prompt with a deadline. A GUI Builder writes the install, uninstall, detection and requirement scripts for you.
 
-> 🇳🇱 The Builder, the popups and the full manual ([LEESMIJ.md](LEESMIJ.md)) are in Dutch. Every text the user sees can be edited, so the popups can be in any language.
+> 🇳🇱 The Builder, the popups and the full manual ([LEESMIJ.md](LEESMIJ.md)) are in Dutch. Every text the user sees can be edited, so the popups can be in any language: the demo below uses English texts.
 >
 > 📖 Walkthrough with screenshots (in Dutch): [AppUpdateKit: app-updates via Intune met een nette popup](https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/)
 
