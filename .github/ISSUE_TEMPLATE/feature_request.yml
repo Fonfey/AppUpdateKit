@@ -1,0 +1,24 @@
+name: 💡 Feature request / Idee of verbetering
+description: Suggest an improvement. / Stel een verbetering voor.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve? / Welk probleem lost het op?
+      description: Describe the situation in your Intune environment, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea / Je idee
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / Alternatieven
+      description: How do you solve it now?
+    validations:
+      required: false

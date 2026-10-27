@@ -1,0 +1,95 @@
+name: 🐞 Bug report / Bug melden
+description: Something doesn't work as expected. / Iets werkt niet zoals verwacht.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Remove data from your own tenant** (tenant IDs, device names, user names, internal paths) before pasting logs.
+        Bedankt voor je melding! Haal gegevens uit je eigen tenant weg voordat je logboeken plakt. Nederlands mag ook.
+
+  - type: dropdown
+    id: part
+    attributes:
+      label: Part / Onderdeel
+      options:
+        - Builder (AppUpdateKit-Builder.ps1)
+        - Consent popup / postpone (Ask-InstallConsent)
+        - Notifications (installing, installed, failed)
+        - Restart prompt
+        - Install / uninstall steps
+        - Detection or requirement script
+        - Time window / idle / Autopilot
+        - Kit bijwerken (updating the kit)
+        - Documentation / documentatie
+        - Other / anders
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens? / Wat gebeurt er?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Stappen om te reproduceren
+      placeholder: |
+        1. Build an app with postpone limit 3
+        2. Deploy as Required, click Later three times
+        3. ...
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Kit version / Kitversie
+      description: "`VERSION` file or the top of the Builder"
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installer
+    attributes:
+      label: Intune installer type
+      options:
+        - PowerShell script installer (Install.ps1)
+        - Command line installer (install.cmd)
+        - Not deployed yet / nog niet uitgerold
+    validations:
+      required: false
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version / Windows-versie
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / Logboek
+      description: "Relevant lines from C:\\ProgramData\\AppUpdates\\<AppId>\\update.log and, if relevant, IntuneManagementExtension.log"
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: check
+    attributes:
+      label: Checklist
+      options:
+        - label: I use the latest release and rebuilt the app. / Ik gebruik de laatste release en heb de app opnieuw gebouwd.
+          required: false
+        - label: I searched the existing issues. / Ik heb in de bestaande issues gezocht.
+          required: true
+        - label: I removed data from my own tenant. / Ik heb gegevens uit mijn tenant weggehaald.
+          required: true

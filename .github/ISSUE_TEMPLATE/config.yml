@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Report a security issue / Beveiligingsprobleem melden
+    url: https://github.com/Fonfey/AppUpdateKit/security/advisories/new
+    about: Report security problems privately, not in a public issue.
+  - name: 📖 Manual and walkthrough / Handleiding (Dutch)
+    url: https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/
+    about: Step-by-step walkthrough with screenshots on Fonferek Cloud.
