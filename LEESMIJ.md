@@ -268,3 +268,11 @@ Bestaat de doelmap nog niet, dan vraagt `xcopy` of het doel een bestand of een m
 - Teller resetten: verwijder `PostponeState.json`.
 - Tijdvenster en inactief: in `update.log` staat per keer waarom er wel of geen popup kwam, bijvoorbeeld "Buiten het tijdvenster" of "15 minuten inactief". Om het inactief-zijn te testen: zet *Inactief* op 1 minuut, vergrendel het scherm (Windows-toets + L) en start de installatie vanuit de Bedrijfsportal of met `.\install.cmd`.
 
+
+## Vragen, bijdragen en beveiliging
+
+- **Vraag of bug:** open een [issue](https://github.com/Fonfey/AppUpdateKit/issues/new/choose). Haal eerst gegevens uit je eigen tenant weg, zoals tenant-ID's, apparaat- en gebruikersnamen.
+- **Zelf iets verbeteren:** lees eerst [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Beveiligingsprobleem:** meld het niet in een openbaar issue, maar privé zoals beschreven in [SECURITY.md](SECURITY.md).
+
+De kit valt onder de [MIT-licentie](LICENSE). Zie ook de [gedragscode](CODE_OF_CONDUCT.md).

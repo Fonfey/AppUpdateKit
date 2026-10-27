@@ -117,7 +117,7 @@ Your own work is never touched. `Apps\`, `Output\`, `_Kit\Instellingen.psd1` and
 
 ## Questions and ideas
 
-Open an [issue](https://github.com/Fonfey/AppUpdateKit/issues). Pull requests are welcome. Every change is reviewed before it is merged.
+Open an [issue](https://github.com/Fonfey/AppUpdateKit/issues). Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Every change is reviewed before it is merged. Found a security problem? Don't open an issue, but follow [SECURITY.md](SECURITY.md).
 
 ## License
 
