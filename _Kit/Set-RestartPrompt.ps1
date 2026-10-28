@@ -1,40 +1,43 @@
-﻿<#
+<#
 .SYNOPSIS
-    Zet na een geslaagde installatie de herstartmelding klaar (instelling RestartMode). NIET aanpassen per app.
+    Sets up the restart prompt after a successful installation (setting RestartMode). Do NOT change per app.
 
 .DESCRIPTION
-    RestartMode in app.psd1 (of Install.ps1):
-      Nooit    : niets doen (een 3010 van de installer gaat gewoon naar Intune)
-      AlsNodig : alleen als de installer om een herstart vraagt (exitcode 3010 of 1641)
-      Altijd   : na elke geslaagde installatie
+    RestartMode in app.psd1 (or Install.ps1):
+      Never    : do nothing (a 3010 from the installer simply goes to Intune)
+      IfNeeded : only when the installer asks for a restart (exit code 3010 or 1641)
+      Always   : after every successful installation
 
-    Kopieert wat nodig is naar C:\ProgramData\AppUpdates\<AppId>\Herstart en maakt een
-    geplande taak (SYSTEM) die de melding toont tot de laptop herstart is.
+    Copies what is needed to C:\ProgramData\AppUpdates\<AppId>\Herstart and creates a
+    scheduled task (SYSTEM) that shows the prompt until the laptop has restarted.
 
 .NOTES
-    Exit code = de exitcode die naar Intune gaat. Regelt de kit de herstart, dan 0,
-    zodat Intune niet ook nog een eigen herstartmelding geeft.
+    Exit code = the exit code that goes to Intune. If the kit handles the restart, then 0,
+    so Intune doesn't give its own restart prompt as well.
 #>
 param ([int]$ExitCode = 0)
 
 . (Join-Path $PSScriptRoot 'AppUI-Launcher.ps1')
 
-$mode   = Get-AppSetting 'RestartMode' 'Nooit'
+$mode   = Get-AppSetting 'RestartMode' 'Never'
 $needed = @(3010, 1641) -contains $ExitCode
-if (-not (($mode -eq 'Altijd') -or ($mode -eq 'AlsNodig' -and $needed))) { exit $ExitCode }
+if (-not (($mode -eq 'Always') -or ($mode -eq 'IfNeeded' -and $needed))) { exit $ExitCode }
 
 $phase = Get-SetupPhase
 if ($phase) {
-    # Tijdens Autopilot regelt de inrichtingspagina de herstart
-    Write-Log "Herstart nodig, maar het apparaat wordt ingericht ($phase): geen melding, exitcode 3010 naar Intune." 'restart'
+    # During Autopilot the Enrollment Status Page handles the restart
+    Write-Log "Restart needed, but the device is being set up ($phase): no prompt, exit code 3010 to Intune." 'restart'
     exit 3010
 }
 
 try {
-    $dir = Join-Path $script:AppFolder 'Herstart'
+    # A restart prompt of a version before 1.3 (task and folder with a Dutch name) is replaced by this one
+    Unregister-ScheduledTask -TaskName "AppUpdateKit Herstart $($script:App.AppId)" -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-Item -Path (Join-Path $script:AppFolder 'Herstart') -Recurse -Force -ErrorAction SilentlyContinue
+    $dir = Join-Path $script:AppFolder 'Restart'
     if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
     $iconName = Get-AppSetting 'Icon' 'app.ico'
-    foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Restart-Prompt.ps1', 'Test-AppInstalled.ps1', 'Get-IdleTime.ps1', 'Standaardteksten.psd1', 'app.psd1', $iconName) {
+    foreach ($f in 'AppUI.ps1', 'AppUI-Launcher.ps1', 'Restart-Prompt.ps1', 'Test-AppInstalled.ps1', 'Get-IdleTime.ps1', 'DefaultTexts.psd1', 'app.psd1', $iconName) {
         $src = Join-Path $PSScriptRoot $f
         if (Test-Path $src) { Copy-Item -Path $src -Destination $dir -Force }
     }
@@ -51,7 +54,7 @@ try {
     } | ConvertTo-Json | Set-Content -Path (Join-Path $dir 'RestartState.json') -Encoding UTF8 -Force
 
     $reminder = [math]::Max(15, [int](Get-AppSetting 'RestartReminderMinutes' 60))
-    $taskName = "AppUpdateKit Herstart $($script:App.AppId)"
+    $taskName = "AppUpdateKit Restart $($script:App.AppId)"
     $script   = Join-Path $dir 'Restart-Prompt.ps1'
     $action   = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
                     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
@@ -62,10 +65,10 @@ try {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($repeat, $boot) -Settings $settings -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName $taskName
 
-    Write-Log "Herstartmelding klaargezet (RestartMode=$mode, installer-exitcode $ExitCode, herinnering elke $reminder min, deadline $(if ($deadlineHours -gt 0) { "$deadlineHours uur" } else { 'geen' }))." 'restart'
+    Write-Log "Restart prompt set up (RestartMode=$mode, installer exit code $ExitCode, reminder every $reminder min, deadline $(if ($deadlineHours -gt 0) { "$deadlineHours hours" } else { 'none' }))." 'restart'
     exit 0
 }
 catch {
-    Write-Log "FOUT bij klaarzetten herstartmelding: $($_.Exception.Message). Exitcode 3010 naar Intune." 'restart'
+    Write-Log "ERROR setting up the restart prompt: $($_.Exception.Message). Exit code 3010 to Intune." 'restart'
     exit 3010
 }

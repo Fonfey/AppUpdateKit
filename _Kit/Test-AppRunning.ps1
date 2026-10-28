@@ -1,10 +1,10 @@
-﻿<#
+<#
 .SYNOPSIS
-    Controleert of de app open staat (procesnamen uit app.json). NIET aanpassen per app.
+    Checks whether the app is open (process names from app.json). Do NOT change per app.
 
 .NOTES
-    Exit 0 = app staat niet open
-    Exit 1 = app staat open (install.cmd stopt dan met 1618, Intune probeert het later opnieuw)
+    Exit 0 = app is not open
+    Exit 1 = app is open (install.cmd then stops with 1618, Intune tries again later)
 #>
 
 . (Join-Path $PSScriptRoot 'AppUI-Launcher.ps1')
@@ -13,7 +13,7 @@ foreach ($name in @($script:App.Processes)) {
     if (-not $name) { continue }
     $p = $name -replace '\.exe$', ''
     if (Get-Process -Name $p -ErrorAction SilentlyContinue) {
-        Write-Log "$($script:App.AppName) staat open (proces: $p), installatie wordt uitgesteld." 'check'
+        Write-Log "$($script:App.AppName) is open (process: $p), installation is postponed." 'check'
         exit 1
     }
 }

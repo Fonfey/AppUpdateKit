@@ -1,20 +1,20 @@
 ﻿<#
 .SYNOPSIS
-    Intune requirement-script voor de update van {{APPNAME}}.
-    Upload dit LOS in Intune (Requirements > Script), het hoort niet in het pakket.
+    Intune requirement script for the update of {{APPNAME}}.
+    Upload this SEPARATELY in Intune (Requirements > Script); it doesn't go into the package.
 
 .DESCRIPTION
-    Tijdens Autopilot (OOBE of inrichtingspagina) is het altijd voldaan als InstallDuringSetup aan staat,
-    ook op nieuwe laptops waar de app nog niet op staat. Staat het uit, dan wacht de app tot na de inrichting.
+    During Autopilot (OOBE or Enrollment Status Page) it is always met if InstallDuringSetup is on,
+    also on new laptops that don't have the app yet. If it's off, the app waits until after setup.
 
-    Verder voldaan als:
-      - de app niet open staat, EN
-      - de gebruiker de update niet recent heeft uitgesteld, EN
-      - het nu binnen het tijdvenster valt (InstallWindow in app.psd1), EN
-      - er iemand is ingelogd, als NoUserAction = 'Wachten', EN
-      - (als OnlyUpdateExisting = $true in app.psd1) de app al op het apparaat staat
+    Otherwise met if:
+      - the app is not open, AND
+      - the user hasn't postponed the update recently, AND
+      - it is now within the time window (InstallWindow in app.psd1), AND
+      - someone is signed in, if NoUserAction = 'Wait', AND
+      - (if OnlyUpdateExisting = $true in app.psd1) the app is already on the device
 
-    Intune-instellingen:
+    Intune settings:
       Run script as 32-bit process on 64-bit clients : No
       Run this script using the logged on credentials : No
       Enforce script signature check                  : No
@@ -22,27 +22,32 @@
       Operator         : Equals
       Value            : Yes
 
-    Het script geeft True (voldaan) of False (niet voldaan). De reden bij False gaat naar de foutuitvoer;
-    Intune zet die in IntuneManagementExtension.log, zonder dat het de uitkomst beinvloedt.
+    The script returns True (met) or False (not met). The reason goes to
+    C:\ProgramData\AppUpdates\<AppId>\requirement.log, never to the error output:
+    Intune treats any error output as 'not met', also during Autopilot.
 #>
 
 $AppId           = '{{APPID}}'
 $Processes       = @({{PROCESSES}})
-$DisplayName     = '{{DETECT_NAME}}'        # naam in "Apps en onderdelen"
-$OnlyIfInstalled = '{{ONLY_IF_INSTALLED}}' -eq 'true'   # true = alleen bijwerken waar de app al staat
+$DisplayName     = '{{DETECT_NAME}}'        # name in "Apps & features"
+$OnlyIfInstalled = '{{ONLY_IF_INSTALLED}}' -eq 'true'   # true = only update where the app is already installed
 
-$InstallWindow   = '{{INSTALL_WINDOW}}'     # Altijd | Werktijd | BuitenWerktijd
+$InstallWindow   = '{{INSTALL_WINDOW}}'     # Always | DuringWorkHours | OutsideWorkHours
 $WorkHours       = '{{WORK_HOURS}}'
 $WorkDays        = '{{WORK_DAYS}}'
-$NoUserAction    = '{{NO_USER_ACTION}}'     # Installeren | Wachten
-$CheckProcesses  = '{{CHECK_PROCESSES}}' -eq 'true'   # false = variant voor install.cmd /noprocesscheck
-$DuringSetup     = '{{INSTALL_DURING_SETUP}}' -eq 'true'   # true = installeren tijdens Autopilot
+$NoUserAction    = '{{NO_USER_ACTION}}'     # Install | Wait
+$CheckProcesses  = '{{CHECK_PROCESSES}}' -eq 'true'   # false = variant for install.cmd /noprocesscheck
+$DuringSetup     = '{{INSTALL_DURING_SETUP}}' -eq 'true'   # true = install during Autopilot
+
+# No error messages to the error output: Intune then counts the requirement as not met (exit code -1)
+$ErrorActionPreference = 'SilentlyContinue'
 
 function Test-InTimeWindow([string]$Window, [string]$Hours, [string]$Days, [datetime]$Now = (Get-Date)) {
-    if (-not $Window -or $Window -eq 'Altijd') { return $true }
-    $map = @{ 'ma' = 'Monday'; 'di' = 'Tuesday'; 'wo' = 'Wednesday'; 'do' = 'Thursday'; 'vr' = 'Friday'; 'za' = 'Saturday'; 'zo' = 'Sunday' }
+    if (-not $Window -or $Window -eq 'Always') { return $true }
+    $map = @{ 'mo' = 'Monday'; 'tu' = 'Tuesday'; 'we' = 'Wednesday'; 'th' = 'Thursday'; 'fr' = 'Friday'; 'sa' = 'Saturday'; 'su' = 'Sunday'
+             'ma' = 'Monday'; 'di' = 'Tuesday'; 'wo' = 'Wednesday'; 'do' = 'Thursday'; 'vr' = 'Friday'; 'za' = 'Saturday'; 'zo' = 'Sunday' }   # also the Dutch days of older versions
     $dayList = @(($Days -split '[,; ]+') | Where-Object { $_.Length -ge 2 } | ForEach-Object { $map[$_.Trim().ToLower().Substring(0, 2)] })
-    # Eén of meer blokken: '08:00-17:00' of '09:00-10:00,13:00-14:00'
+    # One or more blocks: '08:00-17:00' or '09:00-10:00,13:00-14:00'
     $t = $Now.TimeOfDay
     $inHours = $false
     $blocks = @(($Hours -split '[,;]') | Where-Object { $_ -match '^\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*$' })
@@ -53,13 +58,13 @@ function Test-InTimeWindow([string]$Window, [string]$Hours, [string]$Days, [date
         if ($(if ($from -le $to) { $t -ge $from -and $t -lt $to } else { $t -ge $from -or $t -lt $to })) { $inHours = $true; break }
     }
     $isWorkTime = ($dayList -contains $Now.DayOfWeek.ToString()) -and $inHours
-    if ($Window -eq 'Werktijd') { return $isWorkTime }
+    if ($Window -eq 'DuringWorkHours') { return $isWorkTime }
     return -not $isWorkTime
 }
 
 function Get-SetupPhase
 {
-    # 'OOBE' of 'ESP' tijdens Autopilot, anders $null (zelfde controles als PSADT 4)
+    # 'OOBE' or 'ESP' during Autopilot, otherwise $null (same checks as PSADT 4)
     try
     {
         if (-not ('AppKitOobe' -as [type]))
@@ -71,7 +76,7 @@ function Get-SetupPhase
     }
     catch { }
 
-    # De inrichtingspagina draait in wwahost.exe, in de sessie van de gebruiker
+    # The Enrollment Status Page runs in wwahost.exe, in the user's session
     foreach ($p in @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'WWAHost.exe'" -ErrorAction SilentlyContinue))
     {
         $sid = (Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid -ErrorAction SilentlyContinue).Sid
@@ -85,17 +90,31 @@ function Get-SetupPhase
 $statePath = "C:\ProgramData\AppUpdates\$AppId\PostponeState.json"
 
 function Set-Result([bool]$Ok, [string]$Reason = '') {
-    # Intune leest alleen de gewone uitvoer: True of False. De reden komt in de foutuitvoer (het IME-log).
-    if ($Reason) { [Console]::Error.WriteLine($Reason) }
-    Write-Output $(if ($Ok) { 'True' } else { 'False' })
+    # Intune only reads the normal output: True or False. Nothing may go to the error output:
+    # then Intune sees exit code -1 and the requirement as not met. The reason goes to requirement.log.
+    $result = $(if ($Ok) { 'True' } else { 'False' })
+    try {
+        $logDir = "C:\ProgramData\AppUpdates\$AppId"
+        if (-not (Test-Path $logDir)) { $null = New-Item -Path $logDir -ItemType Directory -Force }
+        $logPath = Join-Path $logDir 'requirement.log'
+        $text = ("$result $Reason" -replace '\s+', ' ').Trim()
+        $lines = @(if (Test-Path $logPath) { Get-Content -Path $logPath -Encoding UTF8 })
+        # Only a new line when the result changes, so the log stays short
+        if (-not $lines.Count -or $lines[-1].Substring([Math]::Min(22, $lines[-1].Length)) -ne $text) {
+            $lines = @($lines | Select-Object -Last 199) + "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $text"
+            Set-Content -Path $logPath -Value $lines -Encoding UTF8
+        }
+    }
+    catch { }
+    Write-Output $result
     exit 0
 }
 
 try {
     $phase = Get-SetupPhase
     if ($phase) {
-        if ($DuringSetup) { Set-Result $true "Inrichting bezig ($phase): direct installeren" }
-        Set-Result $false "Inrichting bezig ($phase)"
+        if ($DuringSetup) { Set-Result $true "Setup in progress ($phase): install right away" }
+        Set-Result $false "Setup in progress ($phase)"
     }
 
     if ($OnlyIfInstalled) {
@@ -106,35 +125,35 @@ try {
         $installed = Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "$DisplayName*" }
         if (-not $installed) {
-            Set-Result $false 'Niet geinstalleerd'
+            Set-Result $false 'Not installed'
         }
     }
 
-    # Niemand ingelogd: niemand die gestoord wordt, dus het tijdvenster telt dan niet
+    # Nobody signed in: nobody is disturbed, so the time window doesn't count then
     $userLoggedOn = [bool](@(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue) |
         Where-Object { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User -ne 'defaultuser0' })
-    if (-not $userLoggedOn -and $NoUserAction -eq 'Wachten') {
-        Set-Result $false 'Geen gebruiker ingelogd'
+    if (-not $userLoggedOn -and $NoUserAction -eq 'Wait') {
+        Set-Result $false 'No user signed in'
     }
     if ($userLoggedOn -and -not (Test-InTimeWindow $InstallWindow $WorkHours $WorkDays)) {
-        Set-Result $false 'Buiten tijdvenster'
+        Set-Result $false 'Outside time window'
     }
 
     if (Test-Path $statePath) {
         $state = Get-Content -Path $statePath -Raw | ConvertFrom-Json
         if ($state.PostponeUntil -and (Get-Date) -lt [datetime]$state.PostponeUntil) {
-            Set-Result $false "Uitgesteld tot $($state.PostponeUntil)"
+            Set-Result $false "Postponed until $($state.PostponeUntil)"
         }
     }
 
     foreach ($p in @($Processes | Where-Object { $CheckProcesses })) {
         if (Get-Process -Name ($p -replace '\.exe$', '') -ErrorAction SilentlyContinue) {
-            Set-Result $false "App staat open ($p)"
+            Set-Result $false "App is open ($p)"
         }
     }
 
     Set-Result $true
 }
 catch {
-    Set-Result $false "Fout tijdens controle: $($_.Exception.Message)"
+    Set-Result $false "Error during check: $($_.Exception.Message)"
 }

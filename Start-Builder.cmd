@@ -1,3 +1,3 @@
 @echo off
-rem Start de AppUpdateKit Builder (invulscherm). Dubbelklikken is genoeg.
+rem Starts the AppUpdateKit Builder. Double-clicking is enough.
 start "" powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0AppUpdateKit-Builder.ps1"

@@ -1,15 +1,15 @@
-﻿<#
+<#
 .SYNOPSIS
-    Toont een melding rechtsonder aan de ingelogde gebruiker (ook als dit script als SYSTEM draait).
-    NIET aanpassen per app; teksten komen uit app.psd1 (optioneel) of de standaardteksten hieronder.
+    Shows a notification bottom right to the signed-in user (also when this script runs as SYSTEM).
+    Do NOT change per app; texts come from app.psd1 (optional) or the default texts below.
 
 .PARAMETER Type
-    Info       : algemene melding (geef -Heading en -Message mee)
-    Installing : "Update wordt geïnstalleerd" met voortgangsbalk; sluit vanzelf bij Success/Error
-    Success    : "Update geïnstalleerd" (groen), sluit na 2 minuten vanzelf
-    Error      : "Update niet gelukt" (rood), blijft staan tot de gebruiker sluit
-    Uninstalling / Uninstalled / UninstallError : zelfde meldingen bij het verwijderen.
-                 Alleen als UninstallNotify = $true in app.psd1, of met -Force.
+    Info       : general notification (pass -Heading and -Message)
+    Installing : "Installing update" with progress bar; closes by itself on Success/Error
+    Success    : "Update installed" (green), closes by itself after 2 minutes
+    Error      : "Update failed" (red), stays until the user closes it
+    Uninstalling / Uninstalled / UninstallError : the same notifications when uninstalling.
+                 Only if UninstallNotify = $true in app.psd1, or with -Force.
 
 .EXAMPLE
     powershell.exe -ExecutionPolicy Bypass -File Show-Toast.ps1 -Type Installing
@@ -31,24 +31,24 @@ $flagPath = Join-Path $script:UIFolder 'install-finished.flag'
 
 $defaults = @{
     Info       = @('{AppName}', '')
-    Installing = @('Update wordt geïnstalleerd',
-                   '{AppName} wordt bijgewerkt en is even niet beschikbaar. Je hoeft niets te doen; we laten het weten zodra het klaar is.')
-    Success    = @('Update geïnstalleerd',
-                   'De nieuwe versie van {AppName} staat klaar. Je kunt de app weer gebruiken.')
-    Error      = @('Update niet gelukt',
-                   'Er ging iets mis bij het bijwerken van {AppName}. Werkt de app niet? Neem dan contact op met de servicedesk.')
-    Uninstalling   = @('{AppName} wordt verwijderd',
-                       '{AppName} wordt van je laptop verwijderd en is even niet beschikbaar. Je hoeft niets te doen.')
-    Uninstalled    = @('{AppName} is verwijderd',
-                       '{AppName} staat niet meer op je laptop.')
-    UninstallError = @('Verwijderen niet gelukt',
-                       'Er ging iets mis bij het verwijderen van {AppName}. Geeft dit problemen? Neem dan contact op met de servicedesk.')
+    Installing = @('Installing update',
+                   '{AppName} is being updated and is unavailable for a moment. You don''t need to do anything; we''ll let you know when it''s done.')
+    Success    = @('Update installed',
+                   'The new version of {AppName} is ready. You can use the app again.')
+    Error      = @('Update failed',
+                   'Something went wrong while updating {AppName}. Is the app not working? Please contact the service desk.')
+    Uninstalling   = @('Removing {AppName}',
+                       '{AppName} is being removed from your laptop and is unavailable for a moment. You don''t need to do anything.')
+    Uninstalled    = @('{AppName} has been removed',
+                       '{AppName} is no longer on your laptop.')
+    UninstallError = @('Removal failed',
+                       'Something went wrong while removing {AppName}. Is this causing problems? Please contact the service desk.')
 }
 
 if (-not $Heading) { $Heading = Get-AppText "$($Type)Heading" $defaults[$Type][0] }
 if (-not $Message) { $Message = Get-AppText "$($Type)Message" $defaults[$Type][1] }
 
-Write-Log "Show-Toast gestart. Type='$Type' Heading='$Heading'" 'toast'
+Write-Log "Show-Toast started. Type='$Type' Heading='$Heading'" 'toast'
 
 $visual = @{ Uninstalling = 'Installing'; Uninstalled = 'Success'; UninstallError = 'Error' }[$Type]
 if (-not $visual) { $visual = $Type }
@@ -67,7 +67,7 @@ switch ($visual) {
     'Installing' {
         Remove-Item -Path $flagPath -Force -ErrorAction SilentlyContinue
         $settings.CloseFlagPath    = $flagPath
-        $settings.AutoCloseSeconds = 2700   # vangnet: na 45 minuten altijd sluiten
+        $settings.AutoCloseSeconds = 2700   # safety net: always close after 45 minutes
     }
     'Success' {
         New-Item -Path $flagPath -ItemType File -Force | Out-Null
@@ -80,5 +80,5 @@ switch ($visual) {
 
 [void](Start-UserPopup -Settings $settings)
 
-Write-Log "Show-Toast klaar" 'toast'
+Write-Log "Show-Toast done" 'toast'
 exit 0

@@ -1,19 +1,19 @@
 ﻿<#
 .SYNOPSIS
-    Gedeelde hulpfuncties voor het update-pakket. NIET aanpassen per app.
-    Alle app-specifieke gegevens komen uit app.psd1 in dezelfde map.
+    Shared helper functions for the update package. Do NOT change per app.
+    All app-specific details come from app.psd1 in the same folder.
 
 .DESCRIPTION
-    - Leest app.psd1 (AppId, AppName, Processes, Icon, teksten, ...).
-    - Bepaalt de werkmap: C:\ProgramData\AppUpdates\<AppId>
-      (uitsteltellers, log en de vensterbestanden per app gescheiden).
-    - Start AppUI.ps1 als de ingelogde gebruiker via een scheduled task + VBS-launcher
-      (geen zichtbaar consolevenster) en wacht optioneel op het antwoord.
+    - Reads app.psd1 (AppId, AppName, Processes, Icon, texts, ...).
+    - Determines the working folder: C:\ProgramData\AppUpdates\<AppId>
+      (postpone counters, log and the window files kept separate per app).
+    - Starts AppUI.ps1 as the signed-in user via a scheduled task + VBS launcher
+      (no visible console window) and optionally waits for the answer.
 #>
 
 function ConvertTo-AppHashtable($Object)
 {
-    # JSON (PSCustomObject) terug naar hashtables, zodat $App.Texts['...'] blijft werken
+    # JSON (PSCustomObject) back to hashtables, so $App.Texts['...'] keeps working
     if ($null -eq $Object) { return $null }
     if ($Object -is [System.Management.Automation.PSCustomObject])
     {
@@ -28,17 +28,36 @@ function ConvertTo-AppHashtable($Object)
     return $Object
 }
 
-# Instellingen: van de PowerShell-installer in Intune (APPKIT_CONFIG), anders app.psd1 uit het pakket
+# Settings: from the PowerShell installer in Intune (APPKIT_CONFIG), otherwise app.psd1 from the package
 $script:App = $null
 if ($env:APPKIT_CONFIG -and (Test-Path -LiteralPath $env:APPKIT_CONFIG))
 {
     try { $script:App = ConvertTo-AppHashtable ([System.IO.File]::ReadAllText($env:APPKIT_CONFIG) | ConvertFrom-Json) } catch { $script:App = $null }
 }
 if (-not $script:App) { $script:App = Import-PowerShellDataFile -Path (Join-Path $PSScriptRoot 'app.psd1') }
+function ConvertTo-CurrentSettings($d)
+{
+    # Versions before 1.3 used Dutch values in app.psd1 (Altijd, Bestand, ma,di,...): convert them
+    if (-not $d) { return $d }
+    $maps = @{
+        InstallWindow   = @{ 'Altijd' = 'Always'; 'Werktijd' = 'DuringWorkHours'; 'BuitenWerktijd' = 'OutsideWorkHours' }
+        NoUserAction    = @{ 'Installeren' = 'Install'; 'Wachten' = 'Wait' }
+        RestartMode     = @{ 'Nooit' = 'Never'; 'AlsNodig' = 'IfNeeded'; 'Altijd' = 'Always' }
+        DetectionMethod = @{ 'AppsEnOnderdelen' = 'AppsAndFeatures'; 'Bestand' = 'File'; 'Register' = 'Registry' }
+    }
+    foreach ($k in $maps.Keys) { $v = "$($d[$k])"; if ($v -and $maps[$k].ContainsKey($v)) { $d[$k] = $maps[$k][$v] } }
+    if ("$($d['WorkDays'])" -match '\b(ma|di|wo|do|vr|za|zo)\b')
+    {
+        $days = @{ 'ma' = 'mon'; 'di' = 'tue'; 'wo' = 'wed'; 'do' = 'thu'; 'vr' = 'fri'; 'za' = 'sat'; 'zo' = 'sun' }
+        $d['WorkDays'] = (@("$($d['WorkDays'])" -split '[,; ]+' | Where-Object { $_ } | ForEach-Object { if ($days.ContainsKey($_)) { $days[$_] } else { $_ } }) -join ',')
+    }
+    return $d
+}
+$script:App = ConvertTo-CurrentSettings $script:App
 
-# Standaardteksten voor alle apps (optioneel bestand naast dit script)
+# Default texts for all apps (optional file next to this script)
 $script:DefaultTexts = @{}
-$stdPath = Join-Path $PSScriptRoot 'Standaardteksten.psd1'
+$stdPath = Join-Path $PSScriptRoot 'DefaultTexts.psd1'
 if (Test-Path $stdPath) { try { $script:DefaultTexts = Import-PowerShellDataFile -Path $stdPath } catch { } }
 
 $script:AppFolder = Join-Path 'C:\ProgramData\AppUpdates' $script:App.AppId
@@ -58,34 +77,34 @@ function Write-Log
 
 function Get-AppSetting
 {
-    # Waarde uit app.psd1, of de standaardwaarde als hij ontbreekt
+    # Value from app.psd1, or the default value if it's missing
     param ([string]$Name, $Default)
     $v = $script:App.$Name
     if ($null -eq $v -or "$v" -eq '') { return $Default }
     return $v
 }
 
-# Nieuwe installatie (app stond nog niet op de laptop) of update? Bepaald door install.cmd / Install.ps1.
+# New installation (app was not on the laptop yet) or update? Determined by install.cmd / Install.ps1.
 $script:IsNewInstall = $env:APPKIT_NEWINSTALL -eq '1'
 $script:NewInstallDefaults = @{
-    NewConsentSubHeading    = 'Er staat een nieuwe app voor je klaar'
-    NewConsentMessage       = '{AppName} wordt op je laptop geïnstalleerd. Dat duurt een paar minuten.'
-    NewForcedSubHeading     = 'De installatie start over {Minuten} minuten'
-    NewForcedMessage        = 'Je hebt de installatie van {AppName} {MaxUitstel} keer uitgesteld. Over {Minuten} minuten wordt {AppName} automatisch geïnstalleerd. Sla je werk op.'
-    NewForcedInfo           = 'Wil je niet wachten? Sla je werk op en klik op Nu installeren.'
-    NewInstallingHeading    = '{AppName} wordt geïnstalleerd'
-    NewInstallingMessage    = '{AppName} wordt op je laptop geïnstalleerd. Je hoeft niets te doen; we laten het weten zodra het klaar is.'
-    NewSuccessHeading       = '{AppName} is geïnstalleerd'
-    NewSuccessMessage       = '{AppName} staat klaar. Je vindt de app in het startmenu.'
-    NewErrorHeading         = 'Installatie niet gelukt'
-    NewErrorMessage         = 'Er ging iets mis bij het installeren van {AppName}. Heb je de app nodig? Neem dan contact op met de servicedesk.'
-    NewRestartMessage       = '{AppName} is geïnstalleerd. Herstart je laptop om de installatie af te ronden. Sla eerst je werk op.'
-    NewRestartForcedMessage = '{AppName} is geïnstalleerd en je laptop moet herstarten om de installatie af te ronden. Sla je werk op en sluit je programmas af.'
+    NewConsentSubHeading    = 'A new app is ready for you'
+    NewConsentMessage       = '{AppName} will be installed on your laptop. This takes a few minutes.'
+    NewForcedSubHeading     = 'The installation starts in {Minutes} minutes'
+    NewForcedMessage        = 'You have postponed the installation of {AppName} {MaxPostpones} times. In {Minutes} minutes {AppName} will be installed automatically. Save your work.'
+    NewForcedInfo           = 'Don''t want to wait? Save your work and click Install now.'
+    NewInstallingHeading    = 'Installing {AppName}'
+    NewInstallingMessage    = '{AppName} is being installed on your laptop. You don''t need to do anything; we''ll let you know when it''s done.'
+    NewSuccessHeading       = '{AppName} has been installed'
+    NewSuccessMessage       = '{AppName} is ready. You can find the app in the Start menu.'
+    NewErrorHeading         = 'Installation failed'
+    NewErrorMessage         = 'Something went wrong while installing {AppName}. Do you need the app? Please contact the service desk.'
+    NewRestartMessage       = '{AppName} has been installed. Restart your laptop to finish the installation. Save your work first.'
+    NewRestartForcedMessage = '{AppName} has been installed and your laptop needs to restart to finish the installation. Save your work and close your programs.'
 }
 
 function Test-AppInstalled
 {
-    # Staat de app al in "Apps en onderdelen"? (DetectName, zelfde controle als Requirement.ps1)
+    # Is the app already in "Apps & features"? (DetectName, same check as Requirement.ps1)
     $name = $script:App.DetectName
     if (-not $name) { return $true }
     $paths = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -95,13 +114,13 @@ function Test-AppInstalled
 
 function Get-AppText
 {
-    # Volgorde: eigen tekst in app.psd1 -> Standaardteksten.psd1 -> ingebouwde tekst.
-    # Ingevuld worden: {AppName}, {Versie}, {Minuten} (waarschuwing vooraf) en {MaxUitstel}
+    # Order: own text in app.psd1 -> DefaultTexts.psd1 -> built-in text.
+    # Filled in: {AppName}, {Version} (version), {Minutes} (warning minutes) and {MaxPostpones} (max postpones)
     param ([string]$Key, [string]$Default)
     $t = $null
     if ($script:IsNewInstall)
     {
-        # Eerst de tekst voor een nieuwe installatie: eigen tekst -> Standaardteksten -> ingebouwd
+        # First the text for a new installation: own text -> default texts -> built-in
         $nk = "New$Key"
         if ($script:App.Texts) { $t = $script:App.Texts[$nk] }
         if (-not $t) { $t = $script:DefaultTexts[$nk] }
@@ -111,18 +130,20 @@ function Get-AppText
     if (-not $t) { $t = $script:DefaultTexts[$Key] }
     if (-not $t) { $t = $Default }
     return $t.Replace('{AppName}', $script:App.AppName).
-              Replace('{Versie}', [string]$script:App.Version).
-              Replace('{Minuten}', [string](Get-AppSetting 'ForcedDelayMinutes' 5)).
-              Replace('{MaxUitstel}', [string](Get-AppSetting 'MaxPostpones' 5))
+              Replace('{Version}', [string]$script:App.Version).
+              Replace('{Minutes}', [string](Get-AppSetting 'ForcedDelayMinutes' 5)).
+              Replace('{MaxPostpones}', [string](Get-AppSetting 'MaxPostpones' 5)).
+              Replace('{Versie}', [string]$script:App.Version).Replace('{Minuten}', [string](Get-AppSetting 'ForcedDelayMinutes' 5)).
+              Replace('{MaxUitstel}', [string](Get-AppSetting 'MaxPostpones' 5))   # placeholders of versions before 1.3
 }
 
 function Get-SetupPhase
 {
     <#
-        Geeft 'OOBE' of 'ESP' terug als het apparaat nog wordt ingericht (Autopilot), anders $null.
-          OOBE : Windows-installatie nog niet afgerond (ook de technician-fase van pre-provisioning)
-          ESP  : de inrichtingspagina loopt nog voor de gebruiker die net inlogt
-        Dezelfde controles als PSAppDeployToolkit 4 (Test-ADTOobeCompleted / Test-ADTEspActive).
+        Returns 'OOBE' or 'ESP' if the device is still being set up (Autopilot), otherwise $null.
+          OOBE : Windows setup not finished yet (including the technician phase of pre-provisioning)
+          ESP  : the Enrollment Status Page is still running for the user who just signed in
+        The same checks as PSAppDeployToolkit 4 (Test-ADTOobeCompleted / Test-ADTEspActive).
     #>
     try
     {
@@ -135,7 +156,7 @@ function Get-SetupPhase
     }
     catch { }
 
-    # De inrichtingspagina draait in wwahost.exe, in de sessie van de gebruiker
+    # The Enrollment Status Page runs in wwahost.exe, in the user's session
     foreach ($p in @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'WWAHost.exe'" -ErrorAction SilentlyContinue))
     {
         $sid = (Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid -ErrorAction SilentlyContinue).Sid
@@ -148,7 +169,7 @@ function Get-SetupPhase
 
 function Get-InteractiveUser
 {
-    # defaultuser0 is het tijdelijke account van Autopilot/OOBE: dat telt niet als gebruiker
+    # defaultuser0 is the temporary account of Autopilot/OOBE: that doesn't count as a user
     $explorer = $null; $owner = $null
     foreach ($e in @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction Stop))
     {
@@ -175,16 +196,17 @@ function Get-InteractiveUser
 function Test-InTimeWindow
 {
     <#
-        Valt dit moment binnen het tijdvenster van de app?
-        -Window : 'Altijd' | 'Werktijd' | 'BuitenWerktijd'
-        -Hours  : één of meer blokken, bijv. '08:00-17:00' of '09:00-10:00,13:00-14:00'
-                  (over middernacht mag ook: '22:00-06:00')
-        -Days   : 'ma,di,wo,do,vr'
+        Is this moment within the time window of the app?
+        -Window : 'Always' | 'DuringWorkHours' | 'OutsideWorkHours'
+        -Hours  : one or more blocks, e.g. '08:00-17:00' or '09:00-10:00,13:00-14:00'
+                  (past midnight is allowed too: '22:00-06:00')
+        -Days   : 'mon,tue,wed,thu,fri'
     #>
     param ([string]$Window, [string]$Hours, [string]$Days, [datetime]$Now = (Get-Date))
-    if (-not $Window -or $Window -eq 'Altijd') { return $true }
+    if (-not $Window -or $Window -eq 'Always') { return $true }
 
-    $map = @{ 'ma' = 'Monday'; 'di' = 'Tuesday'; 'wo' = 'Wednesday'; 'do' = 'Thursday'; 'vr' = 'Friday'; 'za' = 'Saturday'; 'zo' = 'Sunday' }
+    $map = @{ 'mo' = 'Monday'; 'tu' = 'Tuesday'; 'we' = 'Wednesday'; 'th' = 'Thursday'; 'fr' = 'Friday'; 'sa' = 'Saturday'; 'su' = 'Sunday'
+               'ma' = 'Monday'; 'di' = 'Tuesday'; 'wo' = 'Wednesday'; 'do' = 'Thursday'; 'vr' = 'Friday'; 'za' = 'Saturday'; 'zo' = 'Sunday' }   # also the Dutch days of older versions
     $dayList = @(($Days -split '[,; ]+') | Where-Object { $_.Length -ge 2 } | ForEach-Object { $map[$_.Trim().ToLower().Substring(0, 2)] })
 
     $t = $Now.TimeOfDay
@@ -199,14 +221,14 @@ function Test-InTimeWindow
     }
     $isWorkTime = ($dayList -contains $Now.DayOfWeek.ToString()) -and $inHours
 
-    if ($Window -eq 'Werktijd') { return $isWorkTime }
+    if ($Window -eq 'DuringWorkHours') { return $isWorkTime }
     return -not $isWorkTime
 }
 
 function Start-UserTask
 {
-    # Start een verborgen PowerShell-script in de sessie van de ingelogde gebruiker.
-    # Geeft de taaknaam terug; de aanroeper ruimt op met Stop-UserTask.
+    # Starts a hidden PowerShell script in the session of the signed-in user.
+    # Returns the task name; the caller cleans up with Stop-UserTask.
     param ($User, [string]$ScriptPath, [string]$Arguments, [string]$Id)
     $vbsPath = Join-Path $script:UIFolder "launch_$Id.vbs"
     $vbs = @"
@@ -233,9 +255,9 @@ function Stop-UserTask([string]$TaskName, [string]$Id)
 function Get-UserActivity
 {
     <#
-        Is de gebruiker aan het werk? Geeft terug:
-          Locked      : scherm vergrendeld (LogonUI.exe draait in de sessie van de gebruiker)
-          IdleMinutes : minuten sinds de laatste muis- of toetsenbordactie ($null = onbekend)
+        Is the user working? Returns:
+          Locked      : screen locked (LogonUI.exe runs in the user's session)
+          IdleMinutes : minutes since the last mouse or keyboard action ($null = unknown)
     #>
     param ($User)
     $result = [pscustomobject]@{ Locked = $false; IdleMinutes = $null }
@@ -262,7 +284,7 @@ function Get-UserActivity
             $result.IdleMinutes = [math]::Floor($ms / 60000)
         }
     }
-    catch { Write-Log "Kon inactiviteit niet bepalen: $($_.Exception.Message)" 'consent' }
+    catch { Write-Log "Could not determine idle time: $($_.Exception.Message)" 'consent' }
     finally
     {
         if ($taskName) { Stop-UserTask $taskName $id }
@@ -274,9 +296,9 @@ function Get-UserActivity
 function Start-UserPopup
 {
     <#
-        -Settings      : hashtable met o.a. Mode, Type, Heading, Message (zie AppUI.ps1)
-        -WaitSeconds   : > 0 = wachten op antwoord (consent); geeft 'Yes'/'No'/'Timeout'/$null terug
-        -LingerSeconds : bij niet wachten: zo lang wachten voor het opruimen van de tijdelijke bestanden
+        -Settings      : hashtable with e.g. Mode, Type, Heading, Message (see AppUI.ps1)
+        -WaitSeconds   : > 0 = wait for a response (consent); returns 'Yes'/'No'/'Timeout'/$null
+        -LingerSeconds : when not waiting: how long to wait before cleaning up the temporary files
     #>
     param (
         [Parameter(Mandatory = $true)][hashtable]$Settings,
@@ -287,19 +309,19 @@ function Start-UserPopup
     $phase = Get-SetupPhase
     if ($phase)
     {
-        Write-Log "Apparaat wordt ingericht ($phase), venster wordt overgeslagen."
+        Write-Log "Device is being set up ($phase), window is skipped."
         return $null
     }
 
     try { $user = Get-InteractiveUser }
-    catch { Write-Log "FOUT bij bepalen ingelogde gebruiker: $($_.Exception.Message)"; return $null }
+    catch { Write-Log "ERROR determining the signed-in user: $($_.Exception.Message)"; return $null }
 
     if (-not $user)
     {
-        Write-Log 'Geen ingelogde gebruiker gevonden, venster wordt overgeslagen.'
+        Write-Log 'No signed-in user found, window is skipped.'
         return $null
     }
-    Write-Log "Ingelogde gebruiker: $($user.Name)"
+    Write-Log "Signed-in user: $($user.Name)"
 
     $iconName = Get-AppSetting 'Icon' 'app.ico'
     Copy-Item -Path (Join-Path $PSScriptRoot 'AppUI.ps1'), (Join-Path $PSScriptRoot $iconName) `
@@ -327,7 +349,7 @@ function Start-UserPopup
     try
     {
         $taskName = Start-UserTask -User $user -ScriptPath $uiScript -Arguments "-ConfigPath `"$configPath`"" -Id $id
-        Write-Log "Venster gestart (mode=$($Settings.Mode), type=$($Settings.Type))"
+        Write-Log "Window started (mode=$($Settings.Mode), type=$($Settings.Type))"
 
         if ($WaitSeconds -gt 0)
         {
@@ -350,7 +372,7 @@ function Start-UserPopup
     }
     catch
     {
-        Write-Log "FOUT bij starten venster: $($_.Exception.Message)"
+        Write-Log "ERROR starting window: $($_.Exception.Message)"
     }
     finally
     {

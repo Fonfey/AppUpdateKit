@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-Only the latest release is supported. Update with **Kit bijwerken...** in the Builder (or `Kit-bijwerken.cmd`) and rebuild your apps to get the fix into their packages.
+Only the latest release is supported. Update with **Update kit...** in the Builder (or `Update-Kit.cmd`) and rebuild your apps to get the fix into their packages.
 
 ## What to report
 
@@ -13,8 +13,8 @@ AppUpdateKit runs on managed laptops **as SYSTEM**, through Intune, and shows po
 - a standard user being able to change what the SYSTEM install runs, such as files or folders under `C:\ProgramData\AppUpdates\`, `PostponeState.json`, the package cache, or the scripts the popups start;
 - values from `app.psd1`, `Install.ps1` parameters or texts that end up executed as a command (command injection);
 - the user-session popups being usable to run code as SYSTEM, or the other way round;
-- the Builder or **Kit bijwerken** downloading or running files without checking where they come from;
-- secrets, tokens or personal data ending up in logs (`update.log`, `Bouwinfo.txt`) or in the built package.
+- the Builder or **Update kit** downloading or running files without checking where they come from;
+- secrets, tokens or personal data ending up in logs (`update.log`, `BuildInfo.txt`) or in the built package.
 
 Ordinary bugs without a security impact can go in a normal [issue](../../issues/new/choose).
 

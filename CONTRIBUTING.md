@@ -33,7 +33,8 @@ Open an issue with **Feature request** and describe the problem you want to solv
 - Shared behaviour belongs in `_Kit\`, so every app gets it after a rebuild. Per-app settings belong in `app.psd1`.
 - Don't break existing `app.psd1` files: add new settings with a sensible default.
 - Never trust input in anything that runs as SYSTEM: quote paths, don't build commands from text with `Invoke-Expression`, and don't write to places a standard user can change.
-- Texts the user sees go in `Standaardteksten.standaard.psd1`, so they can be translated and changed per app.
+- Texts the user sees go in `_Kit\DefaultTexts.default.psd1` (English) and `_Kit\DefaultTexts.nl.default.psd1` (Dutch), so they can be changed per app.
+- Scripts are written in English. Add the Dutch translation of new texts to `Language\nl.xml` and check it with `Language\Test-Language.ps1`.
 - No personal data or data from your own tenant in examples, screenshots or tests.
 
 ## Code of Conduct and licence
@@ -46,4 +47,4 @@ By contributing you agree to the [Code of Conduct](CODE_OF_CONDUCT.md) and to li
 
 Leuk dat je wilt helpen! Meld een bug via een [nieuw issue](../../issues/new/choose) met de kitversie, wat je verwachtte en wat er gebeurde, en de regels uit `C:\ProgramData\AppUpdates\<AppId>\update.log`. Haal eerst gegevens uit je eigen tenant weg (tenant-ID's, apparaat- en gebruikersnamen, interne paden).
 
-Voor een pull request: test op een testapparaat, houd alles compatibel met **Windows PowerShell 5.1**, werk `README.md`, `LEESMIJ.md` en `CHANGELOG.md` bij waar nodig, en voeg nieuwe instellingen toe met een standaardwaarde zodat bestaande `app.psd1`-bestanden blijven werken. Alles wat als SYSTEM draait, gaat zorgvuldig om met invoer. Beveiligingsproblemen meld je via [SECURITY.md](SECURITY.md).
+Voor een pull request: test op een testapparaat, houd alles compatibel met **Windows PowerShell 5.1**, werk `README.md`, `LEESMIJ.md` en `CHANGELOG.md` bij waar nodig, zet de Nederlandse vertaling van nieuwe teksten in `Language\nl.xml` (controle: `Language\Test-Language.ps1`), en voeg nieuwe instellingen toe met een standaardwaarde zodat bestaande `app.psd1`-bestanden blijven werken. Alles wat als SYSTEM draait, gaat zorgvuldig om met invoer. Beveiligingsproblemen meld je via [SECURITY.md](SECURITY.md).

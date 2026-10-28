@@ -2,7 +2,7 @@
 
 **Intune Win32 app updates that ask the user first.** You get a consent popup, a postpone option, a countdown, progress and result notifications, and a restart prompt with a deadline. A GUI Builder writes the install, uninstall, detection and requirement scripts for you.
 
-> 🇳🇱 The Builder, the popups and the full manual ([LEESMIJ.md](LEESMIJ.md)) are in Dutch. Every text the user sees can be edited, so the popups can be in any language: the demo below uses English texts.
+> 🇬🇧 🇳🇱 The Builder and the popups are available in **English** and **Dutch**. The Builder asks which language you want the first time you start it, and each app has its own language for the popups and the scripts on the laptop. Every text the user sees can also be edited. The full manual ([LEESMIJ.md](LEESMIJ.md)) is in Dutch.
 >
 > 📖 Walkthrough with screenshots (in Dutch): [AppUpdateKit: app-updates via Intune met een nette popup](https://fonferek.cloud/blog/appupdatekit-app-updates-met-popup-in-intune/)
 
@@ -32,7 +32,8 @@ If you deploy and update apps with Intune, you have probably run into some of th
 | Users don't know what's happening | Popups appear in the user's session, even though the install runs as SYSTEM: update available, installing (with progress), and installed or failed. They show your logo and accent colour. |
 | Updates arrive during working hours | You can set a time window: only during, or only outside, the hours and days you choose. The update can also install straight away when the user is idle, the screen is locked or nobody is logged on. |
 | Restarts | The restart prompt appears always, or only when the installer asks for it (3010/1641). It has **Restart now** and **Later** buttons, a deadline and a final countdown. Intune gets exit code 0, so the user doesn't get a second restart prompt from Intune. |
-| Every app needs a new script | The **Builder** reads the `.msi` or `.exe` (MSI, NSIS, Inno Setup, InstallShield or WiX) and fills in the name, version and silent switches. It generates `install-app.cmd`, `uninstall-app.cmd`, the detection script, the requirement script and an `Intune-instellingen.txt` file with every setting to enter in Intune. |
+| Every app needs a new script | The **Builder** reads the `.msi` or `.exe` (MSI, NSIS, Inno Setup, InstallShield or WiX) and fills in the name, version and silent switches. It generates `install-app.cmd`, `uninstall-app.cmd`, the detection script, the requirement script and an `Intune-settings.txt` file with every setting to enter in Intune. |
+| App settings, such as turning off the built-in updater | Optional: pick policies from the app's **ADMX** in the Builder (with the explanations from the ADML). They are installed with the app as registry values and removed again on uninstall, so you have one complete package. |
 | Several things to install (a runtime, the app, a config script) | One table lists the components in install order, each with its own parameters and accepted exit codes. If one fails, the install stops with that exit code. |
 | Uninstalling leaves things behind | For each extra component, the Builder writes the undo steps: `msiexec /x` for an MSI, uninstall by name for an EXE, and `reg delete` for a `.reg` file. **It also reads your own `.ps1` and `.cmd` scripts** and undoes what they create: shortcuts, files and folders, registry values, scheduled tasks, services, firewall rules and environment variables. Anything it can't undo is flagged with its line number. |
 | Repackaging for a small change | With the PowerShell script installer, `Install.ps1` and `Uninstall.ps1` hold the settings, texts, parameters and steps. You change them in Intune without repackaging. |
@@ -71,39 +72,53 @@ Everything that is the same for every app lives in `_Kit\`: the popups, the post
    ```powershell
    Get-ChildItem C:\AppUpdateKit -Recurse | Unblock-File
    ```
-2. **Start the Builder** by double-clicking `Start-Builder.cmd`.
-3. **Create an app.** Click *+ Nieuwe app*, choose the installer, fill in the processes and choose a logo. Use the preview buttons to check the popups.
-4. **Build the package** with *Bouw pakket*. On the first build, the Builder offers to download Microsoft's `IntuneWinAppUtil.exe`.
+2. **Start the Builder** by double-clicking `Start-Builder.cmd`, and choose **English**. You can switch later with the *Taal / Language* button.
+3. **Create an app.** Click *+ New app*, choose the installer, fill in the processes and choose a logo. Use the preview buttons to check the popups.
+4. **Build the package** with *Build package*. On the first build, the Builder offers to download Microsoft's `IntuneWinAppUtil.exe`.
 5. **Upload it to Intune** as a Win32 app:
    - the package: `install.intunewin`
    - installer type PowerShell script: `Intune\Install.ps1` and `Intune\Uninstall.ps1`
    - requirement and detection scripts: `Intune\Requirement.ps1` and `Intune\Detection.ps1`
 
-   `Intune-instellingen.txt` lists every other setting.
+   `Intune-settings.txt` lists every other setting.
 
-Prefer not to use the Builder? `1-Nieuwe-app.ps1` and `2-Bouw-pakket.ps1` do the same from PowerShell.
+Prefer not to use the Builder? `New-App.ps1` and `Build-Package.ps1` do the same from PowerShell, in the language you chose in the Builder.
+
+## Languages
+
+| What | Where it is set |
+|---|---|
+| The Builder and the PowerShell scripts | Asked at first start and stored per user. Switch with the *Language / Taal* button. |
+| Popups, default texts and scripts on the laptop | Per app: *Language on the laptop* (tab 3) or `Language` in `app.psd1`. |
+
+The two are independent: the English Builder can make a Dutch app and the other way round. Apps without a `Language` setting (made before 1.2) stay Dutch.
+
+The scripts are written in English: names, comments and texts. The Dutch version comes from `Language\nl.xml`, which lists every text people see with the English original and the Dutch translation side by side. `Language\Translate.ps1` applies it: the Builder and the scripts translate themselves when they start (the result is cached in `%LOCALAPPDATA%\AppUpdateKit\Language`, so that only happens once), and the scripts for the laptop are translated when a package is built. To add a language, copy `nl.xml` to for example `de.xml` and translate it. After changing a script, run `Language\Test-Language.ps1`: it lists any text that has no translation yet.
 
 ## Versions and updates
 
-The kit has a version number (`VERSION`, for example `1.0.0`). The Builder shows it at the top, and every build records it in `Bouwinfo.txt` and `Install.ps1`, so you can always see which kit version a package was built with. [CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
+The kit has a version number (`VERSION`, for example `1.0.0`). The Builder shows it at the top, and every build records it in `BuildInfo.txt` and `Install.ps1`, so you can always see which kit version a package was built with. [CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
 
 Updates are published as [releases](https://github.com/Fonfey/AppUpdateKit/releases). When a new release is out, the Builder tells you at the top (it checks at most once a day). To update:
 
-- Click **Kit bijwerken...** at the bottom left of the Builder, or double-click `Kit-bijwerken.cmd`. It shows what's new and updates to the latest release:
+- Click **Update kit...** at the bottom left of the Builder, or double-click `Update-Kit.cmd`. It shows what's new and updates to the latest release:
   - If you cloned the kit with Git, it fetches the release with Git.
   - If you downloaded a ZIP, it downloads the release and replaces the kit files.
 
-Your own work is never touched. `Apps\`, `Output\`, `_Kit\Instellingen.psd1` and `_Kit\Standaardteksten.psd1` are not in Git. The kit creates the last two from the `*.standaard.psd1` files the first time you use it. Packages you have already built don't change: rebuild an app to give it the new kit version.
+Your own work is never touched. `Apps\`, `Output\`, `_Kit\Settings.psd1`, `_Kit\DefaultTexts.psd1` and `_Kit\DefaultTexts.nl.psd1` are not in Git. The kit creates them from the `*.default.psd1` files the first time you use it. Packages you have already built don't change: rebuild an app to give it the new kit version.
+
+**Coming from a version before 1.3?** File names and setting values are English since 1.3 (for example `Build-Package.ps1`, `BuildInfo.txt`, `Always` instead of `Altijd`). You don't have to convert anything: the kit moves your own settings and default texts to the new names, still reads older apps and builds, and converts the values in `app.psd1` when you save an app. A new package also removes the old restart task and folders with Dutch names from the laptop.
 
 ## What's in the repo
 
 | Path | What it is |
 |---|---|
 | `Start-Builder.cmd`, `AppUpdateKit-Builder.ps1` | The Builder (WPF): apps, popup previews, builds and version history |
-| `Kit-bijwerken.cmd`, `Kit-bijwerken.ps1` | Updates the kit to the latest version on GitHub |
-| `1-Nieuwe-app.ps1`, `2-Bouw-pakket.ps1` | The same as the Builder, without the user interface |
+| `Update-Kit.cmd`, `Update-Kit.ps1` | Updates the kit to the latest version on GitHub |
+| `New-App.ps1`, `Build-Package.ps1` | The same as the Builder, without the user interface |
 | `_Kit\` | The scripts every package gets: popups, postpone logic, restart prompt, Intune scripts, default settings and texts |
 | `_Template\` | The template for a new app |
+| `Language\` | The Dutch translation (`nl.xml`) and the script that applies it |
 | `Apps\`, `Output\` | Empty folders for your apps and built packages (not in Git) |
 | `LEESMIJ.md` | The full manual (in Dutch), including a troubleshooting section |
 | `VERSION`, `CHANGELOG.md` | The kit version and what changed per version |
@@ -117,7 +132,7 @@ Your own work is never touched. `Apps\`, `Output\`, `_Kit\Instellingen.psd1` and
 
 ## Questions and ideas
 
-Open an [issue](https://github.com/Fonfey/AppUpdateKit/issues). Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Every change is reviewed before it is merged. Found a security problem? Don't open an issue, but follow [SECURITY.md](SECURITY.md).
+Open an [issue](https://github.com/Fonfey/AppUpdateKit/issues). Pull requests are welcome. Every change is reviewed before it is merged.
 
 ## License
 

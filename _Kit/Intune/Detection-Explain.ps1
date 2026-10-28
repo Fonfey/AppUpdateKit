@@ -1,17 +1,16 @@
-﻿<#
+<#
 .SYNOPSIS
-    Intune detectiescript voor {{APPNAME}}.
-    Upload dit LOS in Intune (Detection rules > Use a custom detection script).
-
-    Run script as 32-bit process on 64-bit clients : No
-    Enforce script signature check                  : No
+    Explains the detection of {{APPNAME}}, for the 'Test on this PC' button in the Builder.
+    Does NOT go to Intune: Intune gets the short script for the chosen detection
+    (Detection-AppsAndFeatures.ps1, Detection-File.ps1 or Detection-Registry.ps1, as Intune\Detection.ps1).
+    This script does the same check and also tells why something is or isn't found.
 
 .DESCRIPTION
-    Detectie (instelbaar in de Builder, tabblad 1 > Detectie):
-      AppsEnOnderdelen : naam in "Apps en onderdelen" begint met $DisplayName, versie >= $MinVersion
-      Bestand          : $File bestaat, bestandsversie >= $MinVersion (leeg = alleen bestaan)
-      Register         : $RegKey\$RegValue bestaat, waarde >= $MinVersion (leeg = alleen bestaan)
-    Iets op het scherm schrijven + exit 0 = gedetecteerd. Niets schrijven = niet gedetecteerd.
+    Detection (set in the Builder, tab 1 > Detection):
+      AppsAndFeatures  : name in "Apps & features" starts with $DisplayName, version >= $MinVersion
+      File             : $File exists, file version >= $MinVersion (empty = only exists)
+      Registry         : $RegKey\$RegValue exists, value >= $MinVersion (empty = only exists)
+    Writing something to the output + exit 0 = detected. Writing nothing = not detected.
 #>
 
 $Method      = '{{DETECT_METHOD}}'
@@ -28,44 +27,44 @@ function ConvertTo-Version([string]$Text) {
     try { return [version]($parts -join '.') } catch { return $null }
 }
 
-# Uitleg voor 'Testen op deze pc' in de Builder. Alleen als APPKIT_DETECT_DEBUG=1 en via de foutuitvoer,
-# zodat Intune (dat alleen naar de gewone uitvoer kijkt) er niets van merkt.
+# Explanation for 'Test on this PC' in the Builder. Only if APPKIT_DETECT_DEBUG=1 and via the error output,
+# so Intune (which only looks at the normal output) doesn't notice it.
 $Explain = $env:APPKIT_DETECT_DEBUG -eq '1'
 function Say([string]$Text) { if ($Explain) { [Console]::Error.WriteLine($Text) } }
 
 function Test-MinVersion([string]$Found, [string]$What) {
-    if (-not $MinVersion) { Say "$What bestaat (versie wordt niet gecontroleerd)."; return $true }
+    if (-not $MinVersion) { Say "$What exists (version is not checked)."; return $true }
     $min = ConvertTo-Version $MinVersion
     $v = ConvertTo-Version $Found
-    if (-not $v) { Say "$What bestaat, maar '$Found' is geen versienummer. Minimaal nodig: $MinVersion."; return $false }
-    if ($v -gt $min) { Say "$What heeft versie ${Found}: HOGER dan de minimale versie $MinVersion."; return $true }
-    if ($v -eq $min) { Say "$What heeft versie ${Found}: GELIJK aan de minimale versie $MinVersion."; return $true }
-    Say "$What heeft versie ${Found}: LAGER dan de minimale versie $MinVersion."
+    if (-not $v) { Say "$What exists, but '$Found' is not a version number. Required at least: $MinVersion."; return $false }
+    if ($v -gt $min) { Say "$What has version ${Found}: HIGHER than the minimum version $MinVersion."; return $true }
+    if ($v -eq $min) { Say "$What has version ${Found}: EQUAL to the minimum version $MinVersion."; return $true }
+    Say "$What has version ${Found}: LOWER than the minimum version $MinVersion."
     return $false
 }
 
 switch ($Method) {
-    'Bestand' {
+    'File' {
         $path = [Environment]::ExpandEnvironmentVariables($File)
         if (Test-Path -LiteralPath $path -PathType Leaf) {
             $info = (Get-Item -LiteralPath $path).VersionInfo
             $ver = if ($info.FileVersionRaw -and "$($info.FileVersionRaw)" -ne '0.0.0.0') { "$($info.FileVersionRaw)" } else { "$($info.ProductVersion)" }
-            if (Test-MinVersion $ver "Bestand $path") { Write-Output "Gedetecteerd: $path $ver" }
+            if (Test-MinVersion $ver "File $path") { Write-Output "Detected: $path $ver" }
         }
-        elseif (Test-Path -LiteralPath $path -PathType Container) { Say "$path is een map, geen bestand." }
+        elseif (Test-Path -LiteralPath $path -PathType Container) { Say "$path is a folder, not a file." }
         else {
-            Say "Bestand bestaat niet: $path"
+            Say "File does not exist: $path"
             $dir = Split-Path $path -Parent
-            if ($dir -and -not (Test-Path -LiteralPath $dir)) { Say "Ook de map bestaat niet: $dir" }
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { Say "The folder doesn't exist either: $dir" }
         }
     }
-    'Register' {
+    'Registry' {
         $key = $RegKey.TrimEnd('\') -replace '^HKEY_LOCAL_MACHINE\\', 'HKLM:\' -replace '^HKLM\\', 'HKLM:\' -replace '^HKEY_CURRENT_USER\\', 'HKCU:\' -replace '^HKCU\\', 'HKCU:\'
-        # 32-bit apps staan op een 64-bit laptop onder WOW6432Node (en andersom): daar ook kijken
+        # 32-bit apps are under WOW6432Node on a 64-bit laptop (and vice versa): look there too
         $alt = if ($key -match '^HK(LM|CU):\\SOFTWARE\\WOW6432Node\\') { $key -replace '\\WOW6432Node\\', '\' }
                elseif ($key -match '^HK(LM|CU):\\SOFTWARE\\') { $key -replace '^(HK(LM|CU):\\SOFTWARE\\)', '$1WOW6432Node\' } else { $null }
         if (-not (Test-Path -LiteralPath $key) -and $alt -and (Test-Path -LiteralPath $alt)) {
-            Say "Sleutel niet gevonden op $RegKey, wel op $alt (32-bit/64-bit); die wordt gebruikt."
+            Say "Key not found at $RegKey, but found at $alt (32-bit/64-bit); that one is used."
             $key = $alt
         }
         if (Test-Path -LiteralPath $key) {
@@ -73,20 +72,20 @@ switch ($Method) {
                 $props = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
                 $val = $props.$RegValue
                 if ($null -ne $val) {
-                    if (Test-MinVersion "$val" "Registerwaarde $RegValue") { Write-Output "Gedetecteerd: $key\$RegValue = $val" }
+                    if (Test-MinVersion "$val" "Registry value $RegValue") { Write-Output "Detected: $key\$RegValue = $val" }
                 }
                 else {
-                    Say "Registersleutel bestaat, maar de waarde '$RegValue' niet."
+                    Say "Registry key exists, but the value '$RegValue' doesn't."
                     $names = @($props.PSObject.Properties.Name | Where-Object { $_ -notlike 'PS*' })
-                    if ($names.Count) { Say "Waarden in deze sleutel: $($names -join ', ')" }
+                    if ($names.Count) { Say "Values in this key: $($names -join ', ')" }
                 }
             }
-            elseif (-not $MinVersion) { Write-Output "Gedetecteerd: $key"; Say 'Registersleutel bestaat (er is geen waarde en geen versie opgegeven).' }
-            else { Say "Registersleutel bestaat, maar er is geen waarde opgegeven om de versie $MinVersion mee te vergelijken. Vul bij Waarde bijv. DisplayVersion in." }
+            elseif (-not $MinVersion) { Write-Output "Detected: $key"; Say 'Registry key exists (no value and no version specified).' }
+            else { Say "Registry key exists, but no value was specified to compare version $MinVersion with. Fill in e.g. DisplayVersion at Value." }
         }
         else {
-            Say "Registersleutel bestaat niet: $RegKey$(if ($alt) { " (ook niet onder $alt)" })"
-            if ($key -match '\\Uninstall\\\{') { Say 'Bij een MSI is dit de sleutel van precies deze versie: is deze versie (al) geïnstalleerd op deze pc?' }
+            Say "Registry key does not exist: $RegKey$(if ($alt) { " (not under $alt either)" })"
+            if ($key -match '\\Uninstall\\\{') { Say 'For an MSI this is the key of exactly this version: is this version (already) installed on this PC?' }
         }
     }
     default {
@@ -97,17 +96,17 @@ switch ($Method) {
         $all = @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName })
         $named = @($all | Where-Object { $_.DisplayName -like "$DisplayName*" })
         if (-not $named.Count) {
-            Say "Geen app gevonden in Apps en onderdelen waarvan de naam begint met '$DisplayName'."
+            Say "No app found in Apps & features whose name starts with '$DisplayName'."
             $words = @($DisplayName -split '[\s\-_.]+' | Where-Object { $_.Length -ge 3 })
             $squash = ($DisplayName -replace '[\s\-_.]', '')
             $like = @($all | Where-Object { $n = $_.DisplayName; ($n -replace '[\s\-_.]', '') -like "*$squash*" -or @($words | Where-Object { $n -like "*$_*" }).Count } |
                       Select-Object -First 5 | ForEach-Object { "$($_.DisplayName) ($($_.DisplayVersion))" })
-            if ($like.Count) { Say "Lijkt op: $($like -join '; ')"; Say "Tip: zet bij 'Naam in Apps en onderdelen' het begin van de naam precies zoals hierboven." }
+            if ($like.Count) { Say "Similar: $($like -join '; ')"; Say "Tip: set the start of the name at 'Name in Apps & features' exactly as above." }
         }
         else {
             $found = $null
             foreach ($n in $named) { if (Test-MinVersion $n.DisplayVersion "'$($n.DisplayName)'") { $found = $n; break } }
-            if ($found) { Write-Output "Gedetecteerd: $($found.DisplayName) $($found.DisplayVersion)" }
+            if ($found) { Write-Output "Detected: $($found.DisplayName) $($found.DisplayVersion)" }
         }
     }
 }
